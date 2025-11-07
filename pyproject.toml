@@ -1,0 +1,7 @@
+[project]
+name = "sciedu-llm"
+version = "0.1.0"
+description = "An LLM service provider for NYCU's Cognition and Science Learning Laboratory"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
