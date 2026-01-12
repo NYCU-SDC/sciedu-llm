@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+permissions:
+  packages: write
+  contents: read
+
 jobs:
   Lint-and-Format:
     name: Lint with Ruff and Format with Ruff
