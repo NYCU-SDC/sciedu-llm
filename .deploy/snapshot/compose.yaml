@@ -1,0 +1,20 @@
+services:
+  frontend:
+    image: "ghcr.io/nycu-sdc/sciedu-llm:$VERSION"
+    container_name: sciedu-llm-$VERSION
+    networks:
+      - traefik
+    environment:
+      HOST: 0.0.0.0
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.sciedu-llm-$VERSION.rule=Host(`llm.$VERSION.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-$VERSION.entrypoints=websecure"
+      - "traefik.http.routers.sciedu-llm-$VERSION.tls=true"
+      - "traefik.http.routers.sciedu-llm-$VERSION.tls.certresolver=cloudflare"
+      - "traefik.http.services.sciedu-llm-$VERSION.loadbalancer.server.port=8080"
+
+networks:
+  traefik:
+    external: true
