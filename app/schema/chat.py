@@ -28,5 +28,15 @@ CHAT_SSE_RESPONSE: dict[int | str, dict[str, Any]] = {
         "content": {
             "text/event-stream": {"example": {"delta": "string", "isFinished": False}}
         }
-    }
+    },
+    502: {
+        "description": "Bad Gateway - Error communicating with the OpenAI API",
+        "content": {
+            "application/json": {
+                "example": {
+                    "detail": "Error while communicating with the OpenAI API: Connection timeout"
+                }
+            }
+        },
+    },
 }
