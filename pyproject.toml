@@ -23,6 +23,6 @@ dev = [
 
 [tool.poe.tasks]
 dev = "uv run uvicorn app.main:app --reload --port 8080"
-lint = "uv run ruff ."
+lint = "uv run ruff check"
 format = "uv run ruff format"
 test = "uv run pytest"

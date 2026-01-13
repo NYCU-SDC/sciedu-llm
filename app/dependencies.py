@@ -1,8 +1,8 @@
 from functools import cache
-from typing import Annotated, Optional
+from typing import Annotated
 
 from fastapi import Depends
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
