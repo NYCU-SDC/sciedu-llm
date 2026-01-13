@@ -144,7 +144,7 @@ jobs:
               "inject_secret": {
                 "enable": true,
                 "project": "sciedu",
-                "environment": "development",
+                "environment": "dev",
                 "secrets": [
                   {
                     "path": "/LLM",
