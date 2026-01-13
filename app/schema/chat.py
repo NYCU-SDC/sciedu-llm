@@ -7,7 +7,7 @@ from pydantic import BaseModel
 class ChatRequest(BaseModel):
     messages: list[ChatCompletionMessageParam]
     stream: bool
-    model: Optional[str]
+    model: Optional[str] = None
     model_config = {
         "json_schema_extra": {
             "example": {
