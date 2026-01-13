@@ -140,22 +140,24 @@ jobs:
               "environment": "snapshot",
               "component": "llm"
             },
-            "inject_secret": {
-              "enable": true,
-              "project": "sciedu",
-              "environment": "staging",
-              "secrets": [
-                {
-                  "path": "/LLM",
-                  "secret_name": "NCHC_API_KEY",
-                  "env_name": "OPENAI_API_KEY"
-                },
-                {
-                  "path": "/LLM",
-                  "secret_name": "NCHC_API_URL",
-                  "env_name": "OPENAI_BASE_URL"
-                }
-              ]
+            "setup": {
+              "inject_secret": {
+                "enable": true,
+                "project": "sciedu",
+                "environment": "development",
+                "secrets": [
+                  {
+                    "path": "/LLM",
+                    "secret_name": "NCHC_API_KEY",
+                    "env_name": "OPENAI_API_KEY"
+                  },
+                  {
+                    "path": "/LLM",
+                    "secret_name": "NCHC_API_URL",
+                    "env_name": "OPENAI_BASE_URL"
+                  }
+                ]
+              }
             },
             "post": {
               "notify_discord": {
