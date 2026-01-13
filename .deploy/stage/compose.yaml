@@ -1,11 +1,13 @@
 services:
-  frontend:
+  llm:
     image: ghcr.io/nycu-sdc/sciedu-llm:stage
     container_name: sciedu-llm-stage
     networks:
       - traefik
     environment:
       HOST: 0.0.0.0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"

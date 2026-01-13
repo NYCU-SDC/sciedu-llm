@@ -1,6 +1,9 @@
-from fastapi.testclient import TestClient
+import os
 
-from src.main import app
+os.environ["OPENAI_API_KEY"] = "mock_key"
+from fastapi.testclient import TestClient
+from app.main import app
+
 
 client = TestClient(app)
 
