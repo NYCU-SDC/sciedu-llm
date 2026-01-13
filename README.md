@@ -18,7 +18,7 @@ cd sciedu-llm
 uv sync
 
 # Start development server
-uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8080
+uv run poe dev
 ```
 
 The application will be available at `http://localhost:8080`.
@@ -27,7 +27,7 @@ The application will be available at `http://localhost:8080`.
 
 | Command                              | Description                     |
 | ------------------------------------ | ------------------------------- |
-| `uv run uvicorn src.main:app --reload` | Start dev server with hot reload |
-| `uv run pytest`                      | Run tests                       |
-| `uv run ruff check .`                | Run ESLint code analysis        |
-| `uv run ruff format .`               | Format code with Ruff           |
+| `uv run poe dev`                     | Start dev server with hot reload |
+| `uv run poe test`                    | Run tests                       |
+| `uv run poe lint`                    | Run ESLint code analysis        |
+| `uv run poe format`                  | Format code with Ruff           |

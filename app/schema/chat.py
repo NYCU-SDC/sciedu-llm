@@ -1,15 +1,13 @@
-from typing import Any
+from typing import Any, Optional
 
 from openai.types.chat import ChatCompletionMessageParam
-from pydantic import BaseModel, Field
-
-from app.dependencies import get_settings
+from pydantic import BaseModel
 
 
 class ChatRequest(BaseModel):
     messages: list[ChatCompletionMessageParam]
     stream: bool
-    model: str = Field(default_factory=lambda: get_settings().openai_default_model)
+    model: Optional[str]
     model_config = {
         "json_schema_extra": {
             "example": {
