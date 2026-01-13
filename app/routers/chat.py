@@ -1,0 +1,41 @@
+import json
+
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.dependencies import openai_dependency, settings_dependency
+from app.schema.chat import ChatRequest
+
+router = APIRouter(tags=["Chat"])
+
+
+@router.post("/chat")
+async def chat(
+    request: ChatRequest, openai: openai_dependency, settings: settings_dependency
+):
+    if not request.stream:
+        raise HTTPException(
+            status_code=501, detail="Disabling streaming is not supported"
+        )
+
+    model = request.model or settings.openai_default_model
+
+    streaming_response = await openai.chat.completions.create(
+        model=model,
+        messages=request.messages,
+        stream=request.stream,
+    )
+
+    async def stream_response():
+        async for chunk in streaming_response:
+            delta_content = chunk.choices[0].delta.content
+            is_finished = chunk.choices[0].finish_reason is not None
+
+            # Prevent sending empty chunks
+            if not delta_content and not is_finished:
+                continue
+
+            response_chunk = {"delta": delta_content or "", "isFinished": is_finished}
+            yield f"data: {json.dumps(response_chunk)}\n\n"
+
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
