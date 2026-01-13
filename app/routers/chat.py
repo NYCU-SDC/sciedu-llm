@@ -4,12 +4,18 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.dependencies import openai_dependency, settings_dependency
-from app.schema.chat import ChatRequest
+from app.schema.chat import CHAT_SSE_RESPONSE, ChatRequest
 
 router = APIRouter(tags=["Chat"])
 
 
-@router.post("/chat")
+@router.post(
+    "/chat",
+    summary="Chat completion endpoint",
+    description="Stream chat completions using OpenAI-compatible models. Returns Server-Sent Events (SSE) with delta updates.",
+    responses=CHAT_SSE_RESPONSE,
+    response_class=StreamingResponse,
+)
 async def chat(
     request: ChatRequest, openai: openai_dependency, settings: settings_dependency
 ):
