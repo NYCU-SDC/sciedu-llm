@@ -150,7 +150,12 @@ jobs:
                   secret_name: "NCHC_API_KEY",
                   env_name: "OPENAI_API_KEY"
                 },
-              ],
+                {
+                  path: "/LLM",
+                  secret_name: "NCHC_API_URL",
+                  env_name: "OPENAI_BASE_URL"
+                }
+              ]
             },
             "post": {
               "notify_discord": {
