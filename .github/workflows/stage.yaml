@@ -109,6 +109,7 @@ jobs:
       - name: Trigger n8n Snapshot Webhook
         run: |
           curl --location --request POST 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --fail-with-body \
             --header 'Content-Type: application/json' \
             --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
               --data-raw '{
