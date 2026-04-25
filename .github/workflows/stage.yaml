@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   packages: write
@@ -103,7 +104,7 @@ jobs:
 
   Deploy:
     name: Deploy
-    needs: Push-Image
+    needs: Build-Push-Image
     runs-on: ubuntu-latest
     steps:
       - name: Trigger n8n Snapshot Webhook
