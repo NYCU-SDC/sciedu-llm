@@ -127,7 +127,7 @@ class EvalRunner:
             )
             state.session_id = judge.session_id
             state.status = RunStatus.JUDGING
-            await judge.run(state.question_datasets)
+            await judge.run(state.question_datasets, state.corpus_datasets)
             state.status = RunStatus.COMPLETED
             logger.info("run %s completed", state.run_id)
         except Exception as exc:

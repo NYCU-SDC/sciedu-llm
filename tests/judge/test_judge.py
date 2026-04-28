@@ -196,7 +196,10 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
     langfuse.get_dataset = get_dataset  # type: ignore[assignment]
     judge = _make_judge(pipeline, langfuse, k=3)
 
-    results = await judge.run(["questions-biology", "questions-physical"])
+    results = await judge.run(
+        ["questions-biology", "questions-physical"],
+        ["corpus-biology", "corpus-physical"],
+    )
 
     assert len(results) == 2
     assert [c["dataset"] for c in captured_calls] == [
