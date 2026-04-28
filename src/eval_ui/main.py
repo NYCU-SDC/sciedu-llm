@@ -208,11 +208,6 @@ def build_demo(runner: EvalRunner, langfuse: Langfuse) -> gr.Blocks:
     return demo
 
 
-def _max_concurrency() -> int:
-    raw = os.getenv("RAG_MAX_CONCURRENCY") or os.getenv("RAG_MAX_CONCURRENCY")
-    return int(raw) if raw else 64
-
-
 def main() -> None:
     load_dotenv()
     logging.basicConfig(
@@ -223,7 +218,8 @@ def main() -> None:
 
     openai_client = AsyncOpenAI()
     langfuse_client = get_client()
-    semaphore = asyncio.Semaphore(_max_concurrency())
+    max_concurrency = int(os.getenv("RAG_MAX_CONCURRENCY", "64"))
+    semaphore = asyncio.Semaphore(max_concurrency)
     runner = EvalRunner(openai_client, langfuse_client, semaphore)
 
     demo = build_demo(runner, langfuse_client)

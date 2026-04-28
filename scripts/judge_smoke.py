@@ -71,7 +71,7 @@ async def main() -> None:
     print(f"Session ID: {judge.session_id}")
 
     run_start = time.perf_counter()
-    results = await judge.run(QUESTION_DATASETS)
+    results = await judge.run(QUESTION_DATASETS, CORPUS_DATASETS)
     print(f"\nJudge run took {time.perf_counter() - run_start:.1f}s")
 
     for experiment in results:
