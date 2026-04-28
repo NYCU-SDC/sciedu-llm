@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import statistics
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -21,9 +20,10 @@ class Judge:
     """Evaluate a RAGPipeline against question datasets via Langfuse experiments.
 
     For each question dataset the judge runs `dataset.run_experiment(...)` so each
-    item gets a trace, retrieval/quality scores hang off that trace, and run-level
-    means become dataset-run scores. All traces in a single `run()` call share a
-    Langfuse session_id so the cross-dataset run is also browsable in one place.
+    item gets a trace and retrieval/quality scores hang off that trace; Langfuse
+    aggregates those item-level scores into run averages on its own. All traces
+    in a single `run()` call share a Langfuse session_id so the cross-dataset run
+    is also browsable in one place.
     """
 
     def __init__(
@@ -80,7 +80,7 @@ class Judge:
                 experiment = await asyncio.to_thread(
                     dataset.run_experiment,
                     name=f"judge-{dataset_name}",
-                    run_name=f"{self._eval_model}-{timestamp}",
+                    run_name=f"{self._eval_model} {timestamp}",
                     description=(
                         f"Judge run for eval={self._eval_model} "
                         f"judge={self._judge_model} k={self._k}"
@@ -91,7 +91,6 @@ class Judge:
                         self._factuality_evaluator,
                         self._conciseness_evaluator,
                     ],
-                    run_evaluators=[self._aggregate_evaluator],
                     metadata={
                         "eval_model": self._eval_model,
                         "judge_model": self._judge_model,
@@ -99,7 +98,6 @@ class Judge:
                     },
                 )
                 results.append(experiment)
-                self._emit_session_summary(dataset_name, experiment)
 
         self._langfuse.flush()
         return results
@@ -202,29 +200,6 @@ class Judge:
             },
         )
 
-    def _aggregate_evaluator(self, *, item_results, **_kwargs) -> list[Evaluation]:
-        means: dict[str, list[float]] = {}
-        for result in item_results:
-            for evaluation in result.evaluations:
-                if isinstance(evaluation.value, (int, float)):
-                    means.setdefault(evaluation.name, []).append(
-                        float(evaluation.value)
-                    )
-
-        aggregates: list[Evaluation] = []
-        for name, values in means.items():
-            valid = [v for v in values if v >= 0]  # drop FAILED_SCORE sentinel
-            if not valid:
-                continue
-            aggregates.append(
-                Evaluation(
-                    name=f"mean-{name}",
-                    value=statistics.mean(valid),
-                    comment=f"averaged over {len(valid)}/{len(values)} items",
-                )
-            )
-        return aggregates
-
     def _resolve_relevant_chunks(self, expected_output: Any) -> set[int]:
         if not isinstance(expected_output, dict):
             return set()
@@ -267,16 +242,3 @@ class Judge:
             ref_list = []
         references = "\n---\n".join(str(r) for r in ref_list)
         return ideal, references
-
-    def _emit_session_summary(
-        self, dataset_name: str, experiment: ExperimentResult
-    ) -> None:
-        for evaluation in experiment.run_evaluations:
-            if not isinstance(evaluation.value, (int, float)):
-                continue
-            self._langfuse.create_score(
-                session_id=self._session_id,
-                name=f"{dataset_name}/{evaluation.name}",
-                value=float(evaluation.value),
-                comment=evaluation.comment,
-            )

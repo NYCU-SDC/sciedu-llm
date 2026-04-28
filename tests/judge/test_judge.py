@@ -5,10 +5,10 @@ from types import SimpleNamespace
 
 import pytest
 from langfuse import Evaluation
-from langfuse.experiment import ExperimentItemResult, ExperimentResult
+from langfuse.experiment import ExperimentResult
 
 from judge.judge import Judge
-from judge.quality import FAILED_SCORE, QualityScore
+from judge.quality import QualityScore
 
 
 class _FakePipeline:
@@ -167,42 +167,8 @@ async def test_quality_evaluator_compiles_prompt_inputs_from_expected_output():
     assert "passage two" in captured[0]["references"]
 
 
-def test_aggregate_evaluator_drops_failed_scores_and_means_remainder():
-    pipeline = _FakePipeline(retrieved=[])
-    judge = _make_judge(pipeline, _FakeLangfuse(), k=3)
-
-    item_results = [
-        ExperimentItemResult(
-            item={"input": "q1"},
-            output={"output_text": "x", "reference_chunks": []},
-            evaluations=[
-                Evaluation(name="recall@3", value=0.5),
-                Evaluation(name="factuality", value=8.0),
-            ],
-            trace_id=None,
-            dataset_run_id=None,
-        ),
-        ExperimentItemResult(
-            item={"input": "q2"},
-            output={"output_text": "x", "reference_chunks": []},
-            evaluations=[
-                Evaluation(name="recall@3", value=1.0),
-                Evaluation(name="factuality", value=FAILED_SCORE),
-            ],
-            trace_id=None,
-            dataset_run_id=None,
-        ),
-    ]
-
-    aggregates = judge._aggregate_evaluator(item_results=item_results)
-    by_name = {e.name: e.value for e in aggregates}
-    assert by_name["mean-recall@3"] == 0.75
-    # factuality has only one valid (8.0); FAILED_SCORE dropped
-    assert by_name["mean-factuality"] == 8.0
-
-
 @pytest.mark.asyncio
-async def test_run_invokes_dataset_run_experiment_per_dataset_and_emits_session_scores():
+async def test_run_invokes_dataset_run_experiment_per_dataset():
     pipeline = _FakePipeline(retrieved=[1, 2, 3])
     langfuse = _FakeLangfuse()
 
@@ -211,10 +177,7 @@ async def test_run_invokes_dataset_run_experiment_per_dataset_and_emits_session_
         run_name="r",
         description=None,
         item_results=[],
-        run_evaluations=[
-            Evaluation(name="mean-recall@3", value=0.42, comment="ok"),
-            Evaluation(name="mean-factuality", value=6.5),
-        ],
+        run_evaluations=[],
         experiment_id="exp-1",
     )
 
@@ -240,12 +203,8 @@ async def test_run_invokes_dataset_run_experiment_per_dataset_and_emits_session_
         "questions-biology",
         "questions-physical",
     ]
-    # Session-level scores are emitted: one per (dataset, run_evaluation) pair
-    assert len(langfuse.scores) == 4
-    names = {s["name"] for s in langfuse.scores}
-    assert "questions-biology/mean-recall@3" in names
-    assert "questions-physical/mean-factuality" in names
-    assert all(s["session_id"] == judge.session_id for s in langfuse.scores)
+    assert all("run_evaluators" not in c for c in captured_calls)
+    assert langfuse.scores == []
     assert langfuse.flushed is True
 
 
