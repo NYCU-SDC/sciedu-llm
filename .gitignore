@@ -1,6 +1,6 @@
 # Corpus & Question Data
-data/
-
+data/*
+!data/scripts
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -219,3 +219,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# MacOS
+.DS_Store
