@@ -209,7 +209,7 @@ def build_demo(runner: EvalRunner, langfuse: Langfuse) -> gr.Blocks:
 
 
 def _max_concurrency() -> int:
-    raw = os.getenv("RAG_MAX_CONCURRENCY") or os.getenv("RAG_MAX_CONCURRECNY")
+    raw = os.getenv("RAG_MAX_CONCURRENCY") or os.getenv("RAG_MAX_CONCURRENCY")
     return int(raw) if raw else 64
 
 
