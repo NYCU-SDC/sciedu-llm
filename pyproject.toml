@@ -1,15 +1,32 @@
+[build-system]
+requires = ["uv_build>=0.11.7,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["app", "rag", "judge", "eval_ui"]
+module-root = "src"
+
 [project]
 name = "sciedu-llm"
 version = "0.1.0"
 description = "An LLM service provider for NYCU's Cognition and Science Learning Laboratory"
-readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "faiss-cpu>=1.13.2",
     "fastapi>=0.128.0",
+    "gradio>=5.0.0",
     "httpx>=0.28.1",
+    "jieba>=0.42.1",
+    "langchain-community>=0.4.1",
+    "langchain-text-splitters>=1.1.2",
+    "langfuse>=4.5.1",
+    "numpy>=2.4.4",
     "openai>=2.15.0",
+    "openpyxl>=3.1.5",
     "pydantic-settings>=2.12.0",
     "python-dotenv>=1.2.1",
+    "rank-bm25>=0.2.2",
+    "tqdm>=4.67.1",
     "uvicorn>=0.40.0",
 ]
 
@@ -17,12 +34,14 @@ dependencies = [
 dev = [
     "poethepoet>=0.40.0",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
     "ruff>=0.14.11",
 ]
 
 [tool.poe.tasks]
 dev = "uv run uvicorn app.main:app --reload --port 8080"
+ui = "uv run python -m eval_ui.main"
 lint = "uv run ruff check"
 format = "uv run ruff format"
 test = "uv run pytest"
