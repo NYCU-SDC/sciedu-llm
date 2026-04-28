@@ -27,7 +27,10 @@ class _FakePipeline:
 
     async def generate(self, *, query, model, final_k):
         self.generate_calls.append({"query": query, "model": model, "final_k": final_k})
-        return {"output_text": self._output_text, "reference_chunks": list(self._retrieved)}
+        return {
+            "output_text": self._output_text,
+            "reference_chunks": list(self._retrieved),
+        }
 
 
 class _FakeLangfuse:
@@ -55,7 +58,9 @@ class _FakeLangfuse:
         self.flushed = True
 
 
-def _make_judge(pipeline: _FakePipeline, langfuse: _FakeLangfuse, *, k: int = 5) -> Judge:
+def _make_judge(
+    pipeline: _FakePipeline, langfuse: _FakeLangfuse, *, k: int = 5
+) -> Judge:
     openai = SimpleNamespace()  # never used directly when we monkey-patch quality
     return Judge(
         pipeline=pipeline,

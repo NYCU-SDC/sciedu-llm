@@ -47,15 +47,11 @@ def dataset_exists(client: Langfuse, name: str) -> bool:
     return True
 
 
-def clear_dataset_items(
-    client: Langfuse, name: str, logger: logging.Logger
-) -> int:
+def clear_dataset_items(client: Langfuse, name: str, logger: logging.Logger) -> int:
     """Delete every item in `name`. Dataset itself (and its runs) survive."""
     dataset = client.get_dataset(name)
     deleted = 0
-    for item in tqdm(
-        dataset.items, desc=f"Clearing {name}", unit="item", leave=False
-    ):
+    for item in tqdm(dataset.items, desc=f"Clearing {name}", unit="item", leave=False):
         retry_on_transport_error(
             lambda item_id=item.id: client.api.dataset_items.delete(id=item_id),
             logger=logger,

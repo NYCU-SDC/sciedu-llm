@@ -67,7 +67,9 @@ def main() -> None:
             content = path.read_text(encoding="utf-8")
             item_id = f"{name}-{path.stem}"
             retry_on_transport_error(
-                lambda content=content, path=path, item_id=item_id: client.create_dataset_item(
+                lambda content=content,
+                path=path,
+                item_id=item_id: client.create_dataset_item(
                     id=item_id,
                     dataset_name=name,
                     input={"content": content},

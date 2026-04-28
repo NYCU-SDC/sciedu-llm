@@ -3,7 +3,7 @@ requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["app", "rag", "judge"]
+module-name = ["app", "rag", "judge", "eval_ui"]
 module-root = "src"
 
 [project]
@@ -15,6 +15,7 @@ requires-python = ">=3.13"
 dependencies = [
     "faiss-cpu>=1.13.2",
     "fastapi>=0.128.0",
+    "gradio>=5.0.0",
     "httpx>=0.28.1",
     "jieba>=0.42.1",
     "langchain-community>=0.4.1",
@@ -41,6 +42,7 @@ dev = [
 
 [tool.poe.tasks]
 dev = "uv run uvicorn app.main:app --reload --port 8080"
+ui = "uv run python -m eval_ui.main"
 lint = "uv run ruff check"
 format = "uv run ruff format"
 test = "uv run pytest"
