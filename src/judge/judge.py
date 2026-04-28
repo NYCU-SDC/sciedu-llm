@@ -61,7 +61,9 @@ class Judge:
     def session_id(self) -> str:
         return self._session_id
 
-    async def run(self, question_dataset_names: list[str]) -> list[ExperimentResult]:
+    async def run(
+        self, question_dataset_names: list[str], corpus_dataset_names: list[str]
+    ) -> list[ExperimentResult]:
         results: list[ExperimentResult] = []
         timestamp = datetime.now(UTC).strftime("%Y%m%d %H:%M:%S")
 
@@ -95,6 +97,7 @@ class Judge:
                         "eval_model": self._eval_model,
                         "judge_model": self._judge_model,
                         "k": str(self._k),
+                        "corpus_datasets": str(corpus_dataset_names),
                     },
                 )
                 results.append(experiment)
