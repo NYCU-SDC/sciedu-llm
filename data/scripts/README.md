@@ -69,6 +69,8 @@ stem so the RAG pipeline can later resolve coords to chunk IDs.
 ## What gets created on Langfuse
 
 Both scripts skip with a warning if a dataset of the same name already exists.
+Pass `--overwrite` to clear existing items in matching datasets and re-seed in
+place (the dataset itself, and any prior runs against it, are preserved).
 
 ### `seed_corpus.py`
 
@@ -85,12 +87,14 @@ One dataset per `(subject, grade, semester)` group:
 One dataset per subject (`questions-<subject>`). Per row:
 
 - `input = {"question": <題目內容>}`
-- `expected_output = {"gold_answer": <答案分析>, "ref_text": <JSON string>}`
-- `metadata = {"ref_text_coords": <JSON string>}`
+- `expected_output = {"gold_answer": <答案分析>, "ref_text": <JSON string>, "ref_text_coords": <JSON string>}`
 
 `ref_text` is a JSON-stringified list of passage strings split on the `---`
 delimiter. `ref_text_coords` is a JSON-stringified list of
-`{"source": "<filename stem>", "coords": [start, end]}` objects.
+`{"source": "<filename stem>", "coords": [start, end]}` objects. Both live in
+`expected_output` rather than `metadata` because Langfuse propagates dataset-
+item metadata as OTEL trace attributes capped at 200 chars per value, and
+multi-coord rows easily exceed that.
 
 Rows are filtered to `標記狀態 == "成功"`; the count of dropped rows is logged
 as a warning. Coord entries that don't match the expected pattern are also
@@ -103,6 +107,10 @@ From the repo root:
 ```bash
 uv run python data/scripts/seed_corpus.py
 uv run python data/scripts/seed_questions.py
+
+# Re-seed in place (clears existing items, keeps prior runs):
+uv run python data/scripts/seed_corpus.py --overwrite
+uv run python data/scripts/seed_questions.py --overwrite
 ```
 
 The scripts call `langfuse.flush()` at the end to ensure all queued writes
