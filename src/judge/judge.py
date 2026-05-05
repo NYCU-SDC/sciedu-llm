@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,6 +13,10 @@ from openai import AsyncOpenAI
 from judge.metrics import f1_at_k, mrr, precision_at_k, recall_at_k
 from judge.quality import LLMQualityJudge, QualityScore
 from rag.pipeline import RAGPipeline
+
+JUDGE_PROMPT_PREFIX = "judge-"
+
+QualityEvaluator = Callable[..., Awaitable[Evaluation]]
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +39,21 @@ class Judge:
         langfuse: Langfuse,
         judge_model: str,
         eval_model: str,
+        judge_prompts: list[str],
         k: int = 5,
         semaphore: asyncio.Semaphore | None = None,
         session_id: str | None = None,
         max_extract_retries: int = 10,
-        factuality_prompt_name: str = "judge-factuality",
-        conciseness_prompt_name: str = "judge-conciseness",
     ) -> None:
+        if not judge_prompts:
+            raise ValueError("judge_prompts must contain at least one prompt name")
         self._pipeline = pipeline
         self._langfuse = langfuse
         self._judge_model = judge_model
         self._eval_model = eval_model
         self._k = k
         self._session_id = session_id or f"judge-{uuid.uuid4()}"
-        self._factuality_prompt_name = factuality_prompt_name
-        self._conciseness_prompt_name = conciseness_prompt_name
+        self._judge_prompts = list(judge_prompts)
         self._quality = LLMQualityJudge(
             openai=openai,
             langfuse=langfuse,
@@ -56,6 +61,10 @@ class Judge:
             max_extract_retries=max_extract_retries,
             semaphore=semaphore,
         )
+        self._quality_evaluators: dict[str, QualityEvaluator] = {
+            _metric_name(name): self._make_quality_evaluator(name)
+            for name in self._judge_prompts
+        }
 
     @property
     def session_id(self) -> str:
@@ -90,8 +99,7 @@ class Judge:
                     task=self._task,
                     evaluators=[
                         self._retrieval_evaluator,
-                        self._factuality_evaluator,
-                        self._conciseness_evaluator,
+                        *self._quality_evaluators.values(),
                     ],
                     metadata={
                         "eval_model": self._eval_model,
@@ -139,39 +147,27 @@ class Judge:
             Evaluation(name="mrr", value=reciprocal_rank, comment=comment),
         ]
 
-    async def _factuality_evaluator(
-        self,
-        *,
-        input: Any,  # noqa: A002
-        output: dict[str, Any],
-        expected_output: Any,
-        metadata: dict[str, Any] | None,
-        **_kwargs,
-    ) -> Evaluation:
-        return await self._quality_evaluation(
-            metric_name="factuality",
-            prompt_name=self._factuality_prompt_name,
-            input=input,
-            output=output,
-            expected_output=expected_output,
-        )
+    def _make_quality_evaluator(self, prompt_name: str) -> QualityEvaluator:
+        metric_name = _metric_name(prompt_name)
 
-    async def _conciseness_evaluator(
-        self,
-        *,
-        input: Any,  # noqa: A002
-        output: dict[str, Any],
-        expected_output: Any,
-        metadata: dict[str, Any] | None,
-        **_kwargs,
-    ) -> Evaluation:
-        return await self._quality_evaluation(
-            metric_name="conciseness",
-            prompt_name=self._conciseness_prompt_name,
-            input=input,
-            output=output,
-            expected_output=expected_output,
-        )
+        async def evaluator(
+            *,
+            input: Any,  # noqa: A002
+            output: dict[str, Any],
+            expected_output: Any,
+            metadata: dict[str, Any] | None,
+            **_kwargs,
+        ) -> Evaluation:
+            return await self._quality_evaluation(
+                metric_name=metric_name,
+                prompt_name=prompt_name,
+                input=input,
+                output=output,
+                expected_output=expected_output,
+            )
+
+        evaluator.__name__ = f"_evaluator_{metric_name}"
+        return evaluator
 
     async def _quality_evaluation(
         self,
@@ -245,3 +241,7 @@ class Judge:
             ref_list = []
         references = "\n---\n".join(str(r) for r in ref_list)
         return ideal, references
+
+
+def _metric_name(prompt_name: str) -> str:
+    return prompt_name.removeprefix(JUDGE_PROMPT_PREFIX) or prompt_name
