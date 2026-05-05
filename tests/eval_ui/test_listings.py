@@ -24,7 +24,9 @@ def test_list_judge_prompt_names_filters_by_prefix_and_paginates():
     def list_prompts(*, page, limit):  # noqa: ARG001
         return pages[page]
 
-    langfuse = SimpleNamespace(api=SimpleNamespace(prompts=SimpleNamespace(list=list_prompts)))
+    langfuse = SimpleNamespace(
+        api=SimpleNamespace(prompts=SimpleNamespace(list=list_prompts))
+    )
 
     assert list_judge_prompt_names(langfuse) == [
         "judge-alpha",
