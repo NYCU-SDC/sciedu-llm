@@ -1,6 +1,6 @@
 services:
   llm:
-    image: ghcr.io/nycu-sdc/sciedu-llm:stage
+    image: nycusdc/sciedu-llm:stage
     container_name: sciedu-llm-stage
     networks:
       - traefik

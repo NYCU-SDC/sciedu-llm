@@ -1,6 +1,6 @@
 services:
   llm:
-    image: "ghcr.io/nycu-sdc/sciedu-llm:$VERSION"
+    image: "nycusdc/sciedu-llm:$VERSION"
     container_name: sciedu-llm-$VERSION
     networks:
       - traefik
