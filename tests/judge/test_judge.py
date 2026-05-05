@@ -59,7 +59,11 @@ class _FakeLangfuse:
 
 
 def _make_judge(
-    pipeline: _FakePipeline, langfuse: _FakeLangfuse, *, k: int = 5
+    pipeline: _FakePipeline,
+    langfuse: _FakeLangfuse,
+    *,
+    k: int = 5,
+    judge_prompts=["judge-factuality", "judge-conciseness"],
 ) -> Judge:
     openai = SimpleNamespace()  # never used directly when we monkey-patch quality
     return Judge(
@@ -68,6 +72,7 @@ def _make_judge(
         langfuse=langfuse,  # type: ignore[arg-type]
         judge_model="judge-m",
         eval_model="eval-m",
+        judge_prompts=judge_prompts,
         k=k,
     )
 
@@ -149,7 +154,8 @@ async def test_quality_evaluator_compiles_prompt_inputs_from_expected_output():
         "ref_text": json.dumps(["passage one", "passage two"], ensure_ascii=False),
     }
 
-    result = await judge._factuality_evaluator(
+    factuality_evaluator = judge._quality_evaluators["factuality"]
+    result = await factuality_evaluator(
         input={"question": "Q?"},
         output={"output_text": "G", "reference_chunks": []},
         expected_output=expected,
@@ -165,6 +171,53 @@ async def test_quality_evaluator_compiles_prompt_inputs_from_expected_output():
     assert captured[0]["ideal"] == "the answer is 42"
     assert "passage one" in captured[0]["references"]
     assert "passage two" in captured[0]["references"]
+
+
+@pytest.mark.asyncio
+async def test_judge_generates_one_evaluator_per_prompt_with_correct_metric_name():
+    pipeline = _FakePipeline(retrieved=[])
+    judge = _make_judge(
+        pipeline,
+        _FakeLangfuse(),
+        judge_prompts=["judge-factuality", "judge-conciseness", "judge-helpfulness"],
+    )
+
+    captured: list[dict] = []
+
+    async def fake_score(**kwargs):
+        captured.append(kwargs)
+        return QualityScore(value=1.0, raw="1", extract_attempts=0)
+
+    judge._quality.score = fake_score  # type: ignore[assignment]
+
+    assert set(judge._quality_evaluators) == {
+        "factuality",
+        "conciseness",
+        "helpfulness",
+    }
+
+    results = []
+    for metric_name, evaluator in judge._quality_evaluators.items():
+        evaluation = await evaluator(
+            input={"question": "Q"},
+            output={"output_text": "A", "reference_chunks": []},
+            expected_output={"gold_answer": "g", "ref_text": []},
+            metadata=None,
+        )
+        results.append((metric_name, evaluation))
+
+    assert [r[1].name for r in results] == ["factuality", "conciseness", "helpfulness"]
+    # Each closure must forward its OWN prompt_name, not the last one in the loop.
+    assert [c["prompt_name"] for c in captured] == [
+        "judge-factuality",
+        "judge-conciseness",
+        "judge-helpfulness",
+    ]
+
+
+def test_judge_requires_at_least_one_judge_prompt():
+    with pytest.raises(ValueError, match="judge_prompts"):
+        _make_judge(_FakePipeline(retrieved=[]), _FakeLangfuse(), judge_prompts=[])
 
 
 @pytest.mark.asyncio
@@ -207,6 +260,10 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
         "questions-physical",
     ]
     assert all("run_evaluators" not in c for c in captured_calls)
+    # 1 retrieval evaluator + 1 per judge prompt (defaults: factuality, conciseness)
+    for call in captured_calls:
+        assert len(call["evaluators"]) == 3
+        assert call["evaluators"][0] == judge._retrieval_evaluator
     assert langfuse.scores == []
     assert langfuse.flushed is True
 
