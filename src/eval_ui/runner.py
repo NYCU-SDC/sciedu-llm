@@ -48,6 +48,11 @@ class RunState:
     corpus_datasets: list[str]
     question_datasets: list[str]
     k: int
+    embedding_model: str
+    rerank_model: str
+    chunk_size: int
+    chunk_overlap: int
+    judge_prompts: list[str]
     started_at: datetime
     status: RunStatus = RunStatus.PENDING
     session_id: str | None = None
@@ -76,6 +81,11 @@ class EvalRunner:
         corpus: Sequence[str],
         questions: Sequence[str],
         k: int,
+        embedding_model: str,
+        rerank_model: str,
+        chunk_size: int,
+        chunk_overlap: int,
+        judge_prompts: Sequence[str],
     ) -> RunState:
         run_id = f"run-{uuid.uuid4().hex[:8]}"
         state = RunState(
@@ -85,6 +95,11 @@ class EvalRunner:
             corpus_datasets=list(corpus),
             question_datasets=list(questions),
             k=k,
+            embedding_model=embedding_model,
+            rerank_model=rerank_model,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            judge_prompts=list(judge_prompts),
             started_at=datetime.now(UTC),
         )
         self._runs[run_id] = state
@@ -112,9 +127,15 @@ class EvalRunner:
             pipeline = RAGPipeline(
                 self._openai,
                 self._langfuse,
+                embedding_model=state.embedding_model,
+                rerank_model=state.rerank_model,
                 semaphore=self._semaphore,
             )
-            await pipeline.build(state.corpus_datasets)
+            await pipeline.build(
+                state.corpus_datasets,
+                chunk_size=state.chunk_size,
+                chunk_overlap=state.chunk_overlap,
+            )
 
             judge = Judge(
                 pipeline=pipeline,
@@ -122,6 +143,7 @@ class EvalRunner:
                 langfuse=self._langfuse,
                 judge_model=state.judge_model,
                 eval_model=state.eval_model,
+                judge_prompts=state.judge_prompts,
                 k=state.k,
                 semaphore=self._semaphore,
             )
