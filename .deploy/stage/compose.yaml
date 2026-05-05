@@ -1,13 +1,17 @@
 services:
-  llm:
+  llm-provider:
     image: nycusdc/sciedu-llm:stage
-    container_name: sciedu-llm-stage
+    container_name: sciedu-llm-provider-stage
     networks:
       - traefik
     environment:
       HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
+
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"

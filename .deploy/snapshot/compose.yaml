@@ -1,13 +1,17 @@
 services:
-  llm:
+  llm-provider:
     image: "nycusdc/sciedu-llm:$VERSION"
-    container_name: sciedu-llm-$VERSION
+    container_name: sciedu-llm-provider-$VERSION
     networks:
       - traefik
     environment:
       HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+      OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
+
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"
@@ -16,6 +20,29 @@ services:
       - "traefik.http.routers.sciedu-llm-$VERSION.tls=true"
       - "traefik.http.routers.sciedu-llm-$VERSION.tls.certresolver=cloudflare"
       - "traefik.http.services.sciedu-llm-$VERSION.loadbalancer.server.port=8080"
+
+  llm-judge-ui:
+    image: "nycusdc/sciedu-llm:$VERSION"
+    container_name: sciedu-llm-judge-ui-$VERSION
+    command: ["python", "-m", "eval_ui.main"]
+    networks:
+      - traefik
+    environment:
+      HOST: 0.0.0.0
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
+
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.sciedu-llm-judge-ui-$VERSION.rule=Host(`judge.$VERSION.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-judge-ui-$VERSION.entrypoints=websecure"
+      - "traefik.http.routers.sciedu-llm-judge-ui-$VERSION.tls=true"
+      - "traefik.http.routers.sciedu-llm-judge-ui-$VERSION.tls.certresolver=cloudflare"
+      - "traefik.http.services.sciedu-llm-judge-ui-$VERSION.loadbalancer.server.port=7860"
 
 networks:
   traefik:
