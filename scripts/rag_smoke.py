@@ -17,9 +17,9 @@ import os
 import time
 
 from dotenv import load_dotenv
-from langfuse import get_client
 from openai import AsyncOpenAI
 
+from observability import init_langfuse_client
 from rag import RAGPipeline
 
 load_dotenv()
@@ -45,7 +45,7 @@ async def main() -> None:
     model = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-oss-120b")
 
     openai_client = AsyncOpenAI()  # picks up OPENAI_API_KEY / OPENAI_BASE_URL
-    langfuse_client = get_client()
+    langfuse_client = init_langfuse_client()
 
     pipeline = RAGPipeline(openai_client, langfuse_client)
 

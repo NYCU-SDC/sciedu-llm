@@ -18,10 +18,10 @@ import os
 import time
 
 from dotenv import load_dotenv
-from langfuse import get_client
 from openai import AsyncOpenAI
 
 from judge import Judge
+from observability import init_langfuse_client
 from rag import RAGPipeline
 
 load_dotenv()
@@ -46,7 +46,7 @@ async def main() -> None:
     judge_model = os.getenv("JUDGE_MODEL", eval_model)
 
     openai_client = AsyncOpenAI()  # picks up OPENAI_API_KEY / OPENAI_BASE_URL
-    langfuse_client = get_client()
+    langfuse_client = init_langfuse_client()
 
     pipeline = RAGPipeline(openai_client, langfuse_client)
 
