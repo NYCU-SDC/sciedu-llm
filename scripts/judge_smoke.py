@@ -18,6 +18,7 @@ import os
 import time
 
 from dotenv import load_dotenv
+from langfuse import Langfuse
 from openai import AsyncOpenAI
 
 from judge import Judge
@@ -32,7 +33,20 @@ CORPUS_DATASETS = [
 QUESTION_DATASETS = [
     "questions-biology",
 ]
+JUDGE_PROMPT_PREFIX = "judge-"
 K = 5
+
+
+def list_judge_prompt_names(langfuse: Langfuse) -> list[str]:
+    names: list[str] = []
+    page = 1
+    while True:
+        response = langfuse.api.prompts.list(page=page, limit=100)
+        names.extend(p.name for p in response.data)
+        if page >= response.meta.total_pages:
+            break
+        page += 1
+    return sorted(n for n in names if n.startswith(JUDGE_PROMPT_PREFIX))
 
 
 async def main() -> None:
@@ -55,12 +69,19 @@ async def main() -> None:
     await pipeline.build(CORPUS_DATASETS)
     print(f"Built in {time.perf_counter() - build_start:.1f}s")
 
+    judge_prompts = list_judge_prompt_names(langfuse_client)
+    if not judge_prompts:
+        raise RuntimeError(
+            f"No Langfuse prompts found with prefix {JUDGE_PROMPT_PREFIX!r}"
+        )
+
     judge = Judge(
         pipeline=pipeline,
         openai=openai_client,
         langfuse=langfuse_client,
         judge_model=judge_model,
         eval_model=eval_model,
+        judge_prompts=judge_prompts,
         k=K,
     )
 
