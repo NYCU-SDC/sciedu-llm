@@ -13,10 +13,11 @@ from datetime import UTC, datetime
 
 import gradio as gr
 from dotenv import load_dotenv
-from langfuse import Langfuse, get_client
+from langfuse import Langfuse
 from openai import AsyncOpenAI
 
 from eval_ui.runner import EvalRunner, RunState
+from observability import init_langfuse_client
 
 logger = logging.getLogger(__name__)
 
@@ -385,7 +386,7 @@ def main() -> None:
     )
 
     openai_client = AsyncOpenAI()
-    langfuse_client = get_client()
+    langfuse_client = init_langfuse_client()
     max_concurrency = int(os.getenv("RAG_MAX_CONCURRENCY", "64"))
     semaphore = asyncio.Semaphore(max_concurrency)
     runner = EvalRunner(openai_client, langfuse_client, semaphore)
