@@ -198,9 +198,8 @@ class Judge:
         return Evaluation(
             name=metric_name,
             value=score.value,
-            comment=("clean parse" if score.parsed_cleanly else "fallback extract"),
+            comment=(score.raw),
             metadata={
-                "raw": score.raw,
                 "extract_attempts": score.extract_attempts,
             },
         )
