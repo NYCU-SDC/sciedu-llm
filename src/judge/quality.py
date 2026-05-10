@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from langfuse import Langfuse
 from openai import AsyncOpenAI
 
+from judge.config import get_judge_config
 from rag.retry import with_openai_retry
 
 logger = logging.getLogger(__name__)
 
-FAILED_SCORE = -1.0
+# Re-exported sentinel for downstream callers/tests; sourced from JudgeConfig so
+# overriding `JUDGE_FAILED_SCORE` flows through here too.
+FAILED_SCORE = get_judge_config().failed_score
 
 
 @dataclass(frozen=True)
@@ -36,14 +39,19 @@ class LLMQualityJudge:
         openai: AsyncOpenAI,
         langfuse: Langfuse,
         judge_model: str,
-        extract_prompt_name: str = "extract-score-from-judgement",
-        max_extract_retries: int = 10,
+        extract_prompt_name: str | None = None,
+        max_extract_retries: int | None = None,
     ) -> None:
+        config = get_judge_config()
         self._openai = openai
         self._langfuse = langfuse
         self._judge_model = judge_model
-        self._extract_prompt_name = extract_prompt_name
-        self._max_extract_retries = max_extract_retries
+        self._extract_prompt_name = extract_prompt_name or config.extract_prompt_name
+        self._max_extract_retries = (
+            max_extract_retries
+            if max_extract_retries is not None
+            else config.max_extract_retries
+        )
 
     async def score(
         self,
