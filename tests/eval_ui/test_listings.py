@@ -11,14 +11,14 @@ def _prompts_page(names: list[str], page: int, total_pages: int) -> SimpleNamesp
     )
 
 
-def test_list_judge_prompt_names_filters_by_prefix_and_paginates():
+def test_list_judge_prompt_names_filters_by_folder_and_paginates():
     pages = {
         1: _prompts_page(
-            ["judge-zeta", "extract-score", "judge-alpha", "rag-generator"],
+            ["judge/zeta", "extract-score", "judge/alpha", "rag-generator"],
             page=1,
             total_pages=2,
         ),
-        2: _prompts_page(["judge-mu", "judge-beta"], page=2, total_pages=2),
+        2: _prompts_page(["judge/mu", "judge/beta"], page=2, total_pages=2),
     }
 
     def list_prompts(*, page, limit):  # noqa: ARG001
@@ -29,10 +29,10 @@ def test_list_judge_prompt_names_filters_by_prefix_and_paginates():
     )
 
     assert list_judge_prompt_names(langfuse) == [
-        "judge-alpha",
-        "judge-beta",
-        "judge-mu",
-        "judge-zeta",
+        ("alpha", "judge/alpha"),
+        ("beta", "judge/beta"),
+        ("mu", "judge/mu"),
+        ("zeta", "judge/zeta"),
     ]
 
 

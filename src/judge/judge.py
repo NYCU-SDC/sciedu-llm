@@ -250,5 +250,5 @@ class Judge:
 
 
 def _metric_name(prompt_name: str) -> str:
-    prefix = get_judge_config().prompt_prefix
+    prefix = f"{get_judge_config().prompt_folder}/"
     return prompt_name.removeprefix(prefix) or prompt_name

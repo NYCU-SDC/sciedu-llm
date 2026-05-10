@@ -39,8 +39,14 @@ RUNS_TABLE_HEADERS = [
 ]
 
 
-def list_dataset_names(langfuse: Langfuse) -> tuple[list[str], list[str]]:
-    """Return (corpus_names, question_names) sorted alphabetically.
+def list_dataset_names(
+    langfuse: Langfuse,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Return (corpus_choices, question_choices) sorted alphabetically.
+
+    Each choice is a (display_label, full_name) tuple — Gradio shows the label
+    while passing the full name (with folder prefix) back as the selected value
+    so downstream API calls still receive the canonical Langfuse dataset name.
 
     Falls back to ([], []) on any API failure so the UI can still render and
     the user gets a visible error rather than a crash.
@@ -59,19 +65,29 @@ def list_dataset_names(langfuse: Langfuse) -> tuple[list[str], list[str]]:
         logger.exception("Failed to list Langfuse datasets")
         return [], []
 
-    corpus = sorted(n for n in names if n.startswith(config.corpus_dataset_prefix))
+    corpus_prefix = f"{config.corpus_dataset_folder}/"
+    questions_prefix = f"{config.questions_dataset_folder}/"
+    corpus = sorted(
+        (n.removeprefix(corpus_prefix), n) for n in names if n.startswith(corpus_prefix)
+    )
     questions = sorted(
-        n for n in names if n.startswith(config.questions_dataset_prefix)
+        (n.removeprefix(questions_prefix), n)
+        for n in names
+        if n.startswith(questions_prefix)
     )
     return corpus, questions
 
 
-def list_judge_prompt_names(langfuse: Langfuse) -> list[str]:
-    """Return Langfuse prompt names with the configured judge prefix, sorted.
+def list_judge_prompt_names(langfuse: Langfuse) -> list[tuple[str, str]]:
+    """Return judge prompt choices as (display_label, full_name) tuples, sorted.
+
+    Filters Langfuse prompts to those under the configured judge folder. Gradio
+    renders the label (without the folder prefix) while the selected value
+    remains the canonical Langfuse prompt name so downstream API calls work.
 
     Falls back to [] on any API failure so the UI still renders.
     """
-    prefix = get_judge_config().prompt_prefix
+    prefix = f"{get_judge_config().prompt_folder}/"
     try:
         names: list[str] = []
         page = 1
@@ -85,7 +101,7 @@ def list_judge_prompt_names(langfuse: Langfuse) -> list[str]:
         logger.exception("Failed to list Langfuse prompts")
         return []
 
-    return sorted(n for n in names if n.startswith(prefix))
+    return sorted((n.removeprefix(prefix), n) for n in names if n.startswith(prefix))
 
 
 def list_model_ids(openai: AsyncOpenAI) -> list[str]:
@@ -193,7 +209,7 @@ def build_demo(
                 judge_select = gr.CheckboxGroup(
                     label="Judge evaluators (Langfuse prompts)",
                     choices=initial_judges,
-                    value=initial_judges,
+                    value=[full for _, full in initial_judges],
                 )
                 refresh_btn = gr.Button("Refresh datasets, models, and judges")
 
@@ -314,14 +330,15 @@ def build_demo(
             if not models:
                 warnings.append("could not list models — check OPENAI_BASE_URL")
             if not judges:
-                judge_prefix = get_judge_config().prompt_prefix
+                judge_folder = get_judge_config().prompt_folder
                 warnings.append(
-                    f"no Langfuse prompts starting with '{judge_prefix}' found"
+                    f"no Langfuse prompts under '{judge_folder}/' folder found"
                 )
+            judge_values = [full for _, full in judges]
             return (
                 gr.update(choices=corpus),
                 gr.update(choices=questions),
-                gr.update(choices=judges, value=judges),
+                gr.update(choices=judges, value=judge_values),
                 gr.update(choices=models),
                 gr.update(choices=models),
                 gr.update(choices=models),
