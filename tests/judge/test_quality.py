@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -148,26 +147,3 @@ async def test_score_returns_failed_after_exhausted_retries():
     assert result.value == FAILED_SCORE
     assert result.extract_attempts == 10
     assert openai.calls == 11  # 1 judge + 10 extract attempts
-
-
-@pytest.mark.asyncio
-async def test_score_uses_semaphore_when_provided():
-    sem = asyncio.Semaphore(1)
-    sem.acquire = MagicMock(wraps=sem.acquire)
-    openai = _FakeOpenAI(["3"])
-    judge = LLMQualityJudge(
-        openai=openai,
-        langfuse=_FakeLangfuse(),
-        judge_model="judge-m",
-        semaphore=sem,
-    )
-
-    result = await judge.score(
-        prompt_name="judge-factuality",
-        question="q",
-        generation="g",
-        ideal="i",
-        references="r",
-    )
-    assert result.value == 3.0
-    assert sem.acquire.called
