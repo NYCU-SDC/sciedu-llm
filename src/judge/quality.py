@@ -84,7 +84,16 @@ class LLMQualityJudge:
             self._langfuse.update_current_generation(prompt=prompt)
             response = await self._chat(system=compiled, user=question)
             judgement = response.choices[0].message.content or ""
-            span.update(output=judgement)
+            usage = response.usage
+            span.update(
+                output=judgement,
+                usage_details={
+                    "input": usage.prompt_tokens,
+                    "output": usage.completion_tokens,
+                }
+                if usage is not None
+                else None,
+            )
 
         parsed = _parse_last_token(judgement)
         if parsed is not None:
@@ -107,7 +116,16 @@ class LLMQualityJudge:
                 self._langfuse.update_current_generation(prompt=extract_prompt)
                 response = await self._chat(system=compiled, user=judgement)
                 extracted = response.choices[0].message.content or ""
-                span.update(output=extracted)
+                usage = response.usage
+                span.update(
+                    output=extracted,
+                    usage_details={
+                        "input": usage.prompt_tokens,
+                        "output": usage.completion_tokens,
+                    }
+                    if usage is not None
+                    else None,
+                )
 
             last_raw = extracted
             parsed = _parse_score(extracted)
