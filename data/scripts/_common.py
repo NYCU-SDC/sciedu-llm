@@ -147,5 +147,5 @@ def parse_corpus_filename(filename: str) -> dict | None:
 
 def corpus_dataset_name(subject: str, grade: str, semester: str | None) -> str:
     if semester:
-        return f"corpus-{subject}-{grade}-{semester}"
-    return f"corpus-{subject}-{grade}"
+        return f"corpus/{subject}-{grade}-{semester}"
+    return f"corpus/{subject}-{grade}"
