@@ -148,13 +148,23 @@ class RAGPipeline:
                 top_n=min(final_k, len(pool_texts)),
             )
             final_chunk_ids = [pool_ids[idx] for idx, _ in reranked]
+            final_chunks = [chunker.chunks[cid] for cid in final_chunk_ids]
 
             retrieve_span.update(
-                output={
+                output=[
+                    {
+                        "id": chunk.id,
+                        "chapter": chunk.chapter,
+                        "start": chunk.start,
+                        "end": chunk.end,
+                        "text": chunk.text,
+                    }
+                    for chunk in final_chunks
+                ],
+                metadata={
                     "bm25_top": bm25_ranking[:5],
                     "dense_top": dense_ranking[:5],
-                    "reference_chunks": final_chunk_ids,
-                }
+                },
             )
 
         prompt = self._langfuse.get_prompt(self._generator_prompt_name)
