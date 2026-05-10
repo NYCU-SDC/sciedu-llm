@@ -252,6 +252,7 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
     results = await judge.run(
         ["questions-biology", "questions-physical"],
         ["corpus-biology", "corpus-physical"],
+        max_concurrency=8,
     )
 
     assert len(results) == 2
@@ -264,6 +265,7 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
     for call in captured_calls:
         assert len(call["evaluators"]) == 3
         assert call["evaluators"][0] == judge._retrieval_evaluator
+        assert call["max_concurrency"] == 8
     assert langfuse.scores == []
     assert langfuse.flushed is True
 

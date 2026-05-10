@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -39,14 +38,12 @@ class LLMQualityJudge:
         judge_model: str,
         extract_prompt_name: str = "extract-score-from-judgement",
         max_extract_retries: int = 10,
-        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._openai = openai
         self._langfuse = langfuse
         self._judge_model = judge_model
         self._extract_prompt_name = extract_prompt_name
         self._max_extract_retries = max_extract_retries
-        self._semaphore = semaphore
 
     async def score(
         self,
@@ -124,15 +121,6 @@ class LLMQualityJudge:
 
     @with_openai_retry()
     async def _chat(self, *, system: str, user: str):
-        if self._semaphore is not None:
-            async with self._semaphore:
-                return await self._openai.chat.completions.create(
-                    model=self._judge_model,
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user},
-                    ],
-                )
         return await self._openai.chat.completions.create(
             model=self._judge_model,
             messages=[

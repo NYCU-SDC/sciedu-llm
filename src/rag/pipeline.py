@@ -30,19 +30,16 @@ class RAGPipeline:
         embedding_model: str = "bge-m3",
         rerank_model: str = "BGE-Reranker-V2-M3",
         generator_prompt_name: str = "rag-generator-instruction",
-        semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self._openai = openai
         self._langfuse = langfuse
         self._embedding_model = embedding_model
         self._rerank_model = rerank_model
         self._generator_prompt_name = generator_prompt_name
-        self._semaphore = semaphore or asyncio.Semaphore(DEFAULT_MAX_CONCURRENCY)
         self._reranker = Reranker(
             base_url=str(openai.base_url),
             api_key=openai.api_key,
             model=rerank_model,
-            semaphore=self._semaphore,
         )
         self._chunker: CorpusChunker | None = None
         self._dense: DenseIndex | None = None
@@ -54,6 +51,7 @@ class RAGPipeline:
         *,
         chunk_size: int = 500,
         chunk_overlap: int = 100,
+        max_concurrency: int | None = DEFAULT_MAX_CONCURRENCY,
     ) -> None:
         """Aggregate corpus datasets, chunk, and build BM25 + dense indexes."""
         chunker = CorpusChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
@@ -84,7 +82,19 @@ class RAGPipeline:
             len(chunker.chunks),
             len(chunker.chapters),
         )
-        embeddings = await self._embed_chunks([chunk.text for chunk in chunker.chunks])
+
+        if max_concurrency is not None and max_concurrency < 1:
+            raise ValueError("max_concurrency must be a positive integer or None")
+
+        semaphore = (
+            asyncio.BoundedSemaphore(max_concurrency)
+            if max_concurrency is not None
+            else None
+        )
+        embeddings = await self._embed_chunks(
+            [chunk.text for chunk in chunker.chunks],
+            semaphore=semaphore,
+        )
 
         self._chunker = chunker
         self._dense = DenseIndex(embeddings)
@@ -169,38 +179,47 @@ class RAGPipeline:
         response = await self._embed_call(text)
         return np.asarray(response.data[0].embedding, dtype=np.float32)
 
-    async def _embed_chunks(self, texts: list[str]) -> np.ndarray:
+    async def _embed_chunks(
+        self, texts: list[str], semaphore: asyncio.Semaphore | None = None
+    ) -> np.ndarray:
         batches = [
             texts[offset : offset + EMBEDDING_BATCH_SIZE]
             for offset in range(0, len(texts), EMBEDDING_BATCH_SIZE)
         ]
-        results = await asyncio.gather(*(self._embed_batch(batch) for batch in batches))
+        results = await asyncio.gather(
+            *(self._embed_batch(batch, semaphore=semaphore) for batch in batches)
+        )
         vectors = [
             embedding for batch_vectors in results for embedding in batch_vectors
         ]
         return np.asarray(vectors, dtype=np.float32)
 
-    async def _embed_batch(self, batch: list[str]) -> list[list[float]]:
-        response = await self._embed_call(batch)
+    async def _embed_batch(
+        self, batch: list[str], semaphore: asyncio.Semaphore | None = None
+    ) -> list[list[float]]:
+        response = await self._embed_call(batch, semaphore=semaphore)
         return [item.embedding for item in response.data]
 
     @with_openai_retry()
-    async def _embed_call(self, payload):
-        async with self._semaphore:
-            return await self._openai.embeddings.create(
-                model=self._embedding_model, input=payload
-            )
+    async def _embed_call(self, payload, semaphore: asyncio.Semaphore | None = None):
+        if semaphore is not None:
+            async with semaphore:
+                return await self._openai.embeddings.create(
+                    model=self._embedding_model, input=payload
+                )
+        return await self._openai.embeddings.create(
+            model=self._embedding_model, input=payload
+        )
 
     @with_openai_retry()
     async def _chat_complete(self, *, model: str, system: str, query: str):
-        async with self._semaphore:
-            return await self._openai.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": query},
-                ],
-            )
+        return await self._openai.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": query},
+            ],
+        )
 
     def _require_built(self) -> CorpusChunker:
         if self._chunker is None or self._dense is None or self._bm25 is None:
