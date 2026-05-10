@@ -292,6 +292,7 @@ def build_demo(
                 chunk_size=chunk_sz_int,
                 chunk_overlap=chunk_ov_int,
                 judge_prompts=judges_sel,
+                max_concurrency=int(os.getenv("RAG_MAX_CONCURRENCY", "64")),
             )
             return (
                 gr.update(
@@ -387,9 +388,7 @@ def main() -> None:
 
     openai_client = AsyncOpenAI()
     langfuse_client = init_langfuse_client()
-    max_concurrency = int(os.getenv("RAG_MAX_CONCURRENCY", "64"))
-    semaphore = asyncio.Semaphore(max_concurrency)
-    runner = EvalRunner(openai_client, langfuse_client, semaphore)
+    runner = EvalRunner(openai_client, langfuse_client)
 
     demo = build_demo(runner, langfuse_client, openai_client)
     demo.queue().launch(
