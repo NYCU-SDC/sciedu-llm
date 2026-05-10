@@ -82,6 +82,10 @@ class RAGPipeline:
             len(chunker.chunks),
             len(chunker.chapters),
         )
+
+        if max_concurrency is not None and max_concurrency < 1:
+            raise ValueError("max_concurrency must be a positive integer or None")
+
         semaphore = (
             asyncio.BoundedSemaphore(max_concurrency)
             if max_concurrency is not None
@@ -198,7 +202,7 @@ class RAGPipeline:
 
     @with_openai_retry()
     async def _embed_call(self, payload, semaphore: asyncio.Semaphore | None = None):
-        if semaphore:
+        if semaphore is not None:
             async with semaphore:
                 return await self._openai.embeddings.create(
                     model=self._embedding_model, input=payload

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import uuid
@@ -87,10 +88,14 @@ class Judge:
         ):
             for index, dataset_name in enumerate(question_dataset_names):
                 logger.info(
-                    f"Running judge experiment on {dataset_name} ({index + 1}/{len(question_dataset_names)})"
+                    "Running judge experiment on %s (%d/%d)",
+                    dataset_name,
+                    index + 1,
+                    len(question_dataset_names),
                 )
                 dataset = self._langfuse.get_dataset(dataset_name)
-                experiment = dataset.run_experiment(
+                experiment = await asyncio.to_thread(
+                    dataset.run_experiment,
                     name=f"judge-{dataset_name}",
                     run_name=f"{self._eval_model} {timestamp}",
                     description=(
