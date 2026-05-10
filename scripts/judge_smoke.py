@@ -33,7 +33,7 @@ CORPUS_DATASETS = [
 QUESTION_DATASETS = [
     "questions-biology",
 ]
-JUDGE_PROMPT_PREFIX = "judge-"
+JUDGE_PROMPT_PREFIX = "judge/"
 K = 5
 
 

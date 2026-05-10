@@ -4,11 +4,14 @@ from dataclasses import dataclass
 from langfuse import Langfuse
 from openai import AsyncOpenAI
 
+from judge.config import get_judge_config
 from rag.retry import with_openai_retry
 
 logger = logging.getLogger(__name__)
 
-FAILED_SCORE = -1.0
+# Re-exported sentinel for downstream callers/tests; sourced from JudgeConfig so
+# overriding `JUDGE_FAILED_SCORE` flows through here too.
+FAILED_SCORE = get_judge_config().failed_score
 
 
 @dataclass(frozen=True)
@@ -36,14 +39,19 @@ class LLMQualityJudge:
         openai: AsyncOpenAI,
         langfuse: Langfuse,
         judge_model: str,
-        extract_prompt_name: str = "extract-score-from-judgement",
-        max_extract_retries: int = 10,
+        extract_prompt_name: str | None = None,
+        max_extract_retries: int | None = None,
     ) -> None:
+        config = get_judge_config()
         self._openai = openai
         self._langfuse = langfuse
         self._judge_model = judge_model
-        self._extract_prompt_name = extract_prompt_name
-        self._max_extract_retries = max_extract_retries
+        self._extract_prompt_name = extract_prompt_name or config.extract_prompt_name
+        self._max_extract_retries = (
+            max_extract_retries
+            if max_extract_retries is not None
+            else config.max_extract_retries
+        )
 
     async def score(
         self,
@@ -76,7 +84,16 @@ class LLMQualityJudge:
             self._langfuse.update_current_generation(prompt=prompt)
             response = await self._chat(system=compiled, user=question)
             judgement = response.choices[0].message.content or ""
-            span.update(output=judgement)
+            usage = response.usage
+            span.update(
+                output=judgement,
+                usage_details={
+                    "input": usage.prompt_tokens,
+                    "output": usage.completion_tokens,
+                }
+                if usage is not None
+                else None,
+            )
 
         parsed = _parse_last_token(judgement)
         if parsed is not None:
@@ -99,7 +116,16 @@ class LLMQualityJudge:
                 self._langfuse.update_current_generation(prompt=extract_prompt)
                 response = await self._chat(system=compiled, user=judgement)
                 extracted = response.choices[0].message.content or ""
-                span.update(output=extracted)
+                usage = response.usage
+                span.update(
+                    output=extracted,
+                    usage_details={
+                        "input": usage.prompt_tokens,
+                        "output": usage.completion_tokens,
+                    }
+                    if usage is not None
+                    else None,
+                )
 
             last_raw = extracted
             parsed = _parse_score(extracted)

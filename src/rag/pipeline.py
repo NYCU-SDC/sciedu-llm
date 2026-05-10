@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import os
 from typing import Any
 
 import numpy as np
@@ -8,6 +7,7 @@ from langfuse import Langfuse
 from openai import AsyncOpenAI
 
 from rag.chunker import CorpusChunker
+from rag.config import RAGConfig, get_rag_config
 from rag.fusion import rrf_merge
 from rag.reranker import Reranker
 from rag.retriever import BM25Index, DenseIndex
@@ -15,8 +15,9 @@ from rag.retry import with_openai_retry
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_BATCH_SIZE = int(os.getenv("RAG_EMBEDDING_BATCH_SIZE", "64"))
-DEFAULT_MAX_CONCURRENCY = int(os.getenv("RAG_MAX_CONCURRENCY", "64"))
+# Sentinel for `build(..., max_concurrency=...)` so callers can still pass `None`
+# to mean "unlimited" while omitting the kwarg pulls the configured default.
+_UNSET: Any = object()
 
 
 class RAGPipeline:
@@ -27,19 +28,24 @@ class RAGPipeline:
         openai: AsyncOpenAI,
         langfuse: Langfuse,
         *,
-        embedding_model: str = "bge-m3",
-        rerank_model: str = "BGE-Reranker-V2-M3",
-        generator_prompt_name: str = "rag-generator-instruction",
+        embedding_model: str | None = None,
+        rerank_model: str | None = None,
+        generator_prompt_name: str | None = None,
+        config: RAGConfig | None = None,
     ) -> None:
+        self._config = config or get_rag_config()
         self._openai = openai
         self._langfuse = langfuse
-        self._embedding_model = embedding_model
-        self._rerank_model = rerank_model
-        self._generator_prompt_name = generator_prompt_name
+        self._embedding_model = embedding_model or self._config.embedding_model
+        self._rerank_model = rerank_model or self._config.rerank_model
+        self._generator_prompt_name = (
+            generator_prompt_name or self._config.generator_prompt_name
+        )
+        self._embedding_batch_size = self._config.embedding_batch_size
         self._reranker = Reranker(
             base_url=str(openai.base_url),
             api_key=openai.api_key,
-            model=rerank_model,
+            model=self._rerank_model,
         )
         self._chunker: CorpusChunker | None = None
         self._dense: DenseIndex | None = None
@@ -49,11 +55,18 @@ class RAGPipeline:
         self,
         corpus_dataset_names: list[str],
         *,
-        chunk_size: int = 500,
-        chunk_overlap: int = 100,
-        max_concurrency: int | None = DEFAULT_MAX_CONCURRENCY,
+        chunk_size: int | None = None,
+        chunk_overlap: int | None = None,
+        max_concurrency: int | None = _UNSET,
     ) -> None:
         """Aggregate corpus datasets, chunk, and build BM25 + dense indexes."""
+        if chunk_size is None:
+            chunk_size = self._config.chunk_size
+        if chunk_overlap is None:
+            chunk_overlap = self._config.chunk_overlap
+        if max_concurrency is _UNSET:
+            max_concurrency = self._config.max_concurrency
+
         chunker = CorpusChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
         for name in corpus_dataset_names:
@@ -135,13 +148,23 @@ class RAGPipeline:
                 top_n=min(final_k, len(pool_texts)),
             )
             final_chunk_ids = [pool_ids[idx] for idx, _ in reranked]
+            final_chunks = [chunker.chunks[cid] for cid in final_chunk_ids]
 
             retrieve_span.update(
-                output={
+                output=[
+                    {
+                        "id": chunk.id,
+                        "chapter": chunk.chapter,
+                        "start": chunk.start,
+                        "end": chunk.end,
+                        "text": chunk.text,
+                    }
+                    for chunk in final_chunks
+                ],
+                metadata={
                     "bm25_top": bm25_ranking[:5],
                     "dense_top": dense_ranking[:5],
-                    "reference_chunks": final_chunk_ids,
-                }
+                },
             )
 
         prompt = self._langfuse.get_prompt(self._generator_prompt_name)
@@ -182,9 +205,10 @@ class RAGPipeline:
     async def _embed_chunks(
         self, texts: list[str], semaphore: asyncio.Semaphore | None = None
     ) -> np.ndarray:
+        batch_size = self._embedding_batch_size
         batches = [
-            texts[offset : offset + EMBEDDING_BATCH_SIZE]
-            for offset in range(0, len(texts), EMBEDDING_BATCH_SIZE)
+            texts[offset : offset + batch_size]
+            for offset in range(0, len(texts), batch_size)
         ]
         results = await asyncio.gather(
             *(self._embed_batch(batch, semaphore=semaphore) for batch in batches)

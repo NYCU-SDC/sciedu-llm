@@ -18,8 +18,8 @@ class _FakePrompt:
 class _FakeLangfuse:
     def __init__(self) -> None:
         self.prompts_by_name = {
-            "judge-factuality": _FakePrompt("judge-factuality"),
-            "judge-conciseness": _FakePrompt("judge-conciseness"),
+            "judge/factuality": _FakePrompt("judge/factuality"),
+            "judge/conciseness": _FakePrompt("judge/conciseness"),
             "extract-score-from-judgement": _FakePrompt("extract-score-from-judgement"),
         }
 
@@ -36,7 +36,8 @@ class _FakeLangfuse:
 
 def _completion(content: str):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0),
     )
 
 
@@ -68,7 +69,7 @@ async def test_score_parses_last_token_when_clean():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -89,7 +90,7 @@ async def test_score_strips_punctuation_around_token():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -116,7 +117,7 @@ async def test_score_falls_back_to_extract_then_succeeds():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -138,7 +139,7 @@ async def test_score_returns_failed_after_exhausted_retries():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
