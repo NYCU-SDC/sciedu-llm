@@ -36,7 +36,8 @@ class _FakeLangfuse:
 
 def _completion(content: str):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0),
     )
 
 
