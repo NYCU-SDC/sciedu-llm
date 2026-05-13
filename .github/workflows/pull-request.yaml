@@ -145,7 +145,6 @@ jobs:
                     "path": "/LLM",
                     "secret_name": "NCHC_API_KEY",
                     "env_name": "OPENAI_API_KEY"
-<<<<<<< HEAD
                   },
                   {
                     "path": "/LLM",
@@ -156,8 +155,6 @@ jobs:
                     "path": "/LLM",
                     "secret_name": "LANGFUSE_PUBLIC_KEY",
                     "env_name": "LANGFUSE_PUBLIC_KEY"
-=======
->>>>>>> main
                   }
                 ]
               }
