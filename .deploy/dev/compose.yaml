@@ -44,24 +44,6 @@ services:
       - "traefik.http.routers.sciedu-llm-judge-ui-dev.tls.certresolver=cloudflare"
       - "traefik.http.services.sciedu-llm-judge-ui-dev.loadbalancer.server.port=7860"
 
-  chroma:
-    image: chromadb/chroma
-    container_name: sciedu-llm-chroma-db
-    volumes:
-      - chroma-data:/data
-    restart: unless-stopped
-    ports:
-      - "8123:8000"
-    healthcheck:
-      # Adjust below to match your container port
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    networks:
-      - chroma
-
 networks:
   traefik:
     external: true
-  chroma:
