@@ -10,11 +10,10 @@ from langfuse import Evaluation, Langfuse, propagate_attributes
 from langfuse.experiment import ExperimentResult
 from openai import AsyncOpenAI
 
+from judge.config import get_judge_config
 from judge.metrics import f1_at_k, mrr, precision_at_k, recall_at_k
 from judge.quality import LLMQualityJudge, QualityScore
 from rag.pipeline import RAGPipeline
-
-JUDGE_PROMPT_PREFIX = "judge-"
 
 QualityEvaluator = Callable[..., Awaitable[Evaluation]]
 
@@ -41,9 +40,8 @@ class Judge:
         eval_model: str,
         judge_prompts: list[str],
         k: int = 5,
-        semaphore: asyncio.Semaphore | None = None,
         session_id: str | None = None,
-        max_extract_retries: int = 10,
+        max_extract_retries: int | None = None,
     ) -> None:
         if not judge_prompts:
             raise ValueError("judge_prompts must contain at least one prompt name")
@@ -59,7 +57,6 @@ class Judge:
             langfuse=langfuse,
             judge_model=judge_model,
             max_extract_retries=max_extract_retries,
-            semaphore=semaphore,
         )
         self._quality_evaluators: dict[str, QualityEvaluator] = {
             _metric_name(name): self._make_quality_evaluator(name)
@@ -71,7 +68,10 @@ class Judge:
         return self._session_id
 
     async def run(
-        self, question_dataset_names: list[str], corpus_dataset_names: list[str]
+        self,
+        question_dataset_names: list[str],
+        corpus_dataset_names: list[str],
+        max_concurrency: int = 50,
     ) -> list[ExperimentResult]:
         results: list[ExperimentResult] = []
         timestamp = datetime.now(UTC).strftime("%Y%m%d %H:%M:%S")
@@ -85,8 +85,13 @@ class Judge:
                 "k": str(self._k),
             },
         ):
-            for dataset_name in question_dataset_names:
-                logger.info("Running judge experiment on '%s'", dataset_name)
+            for index, dataset_name in enumerate(question_dataset_names):
+                logger.info(
+                    "Running judge experiment on %s (%d/%d)",
+                    dataset_name,
+                    index + 1,
+                    len(question_dataset_names),
+                )
                 dataset = self._langfuse.get_dataset(dataset_name)
                 experiment = await asyncio.to_thread(
                     dataset.run_experiment,
@@ -94,7 +99,8 @@ class Judge:
                     run_name=f"{self._eval_model} {timestamp}",
                     description=(
                         f"Judge run for eval={self._eval_model} "
-                        f"judge={self._judge_model} k={self._k}"
+                        f"judge={self._judge_model} k={self._k} "
+                        f"corpus={', '.join(corpus_dataset_names)}"
                     ),
                     task=self._task,
                     evaluators=[
@@ -105,8 +111,8 @@ class Judge:
                         "eval_model": self._eval_model,
                         "judge_model": self._judge_model,
                         "k": str(self._k),
-                        "corpus_datasets": str(corpus_dataset_names),
                     },
+                    max_concurrency=max_concurrency,
                 )
                 results.append(experiment)
 
@@ -192,9 +198,8 @@ class Judge:
         return Evaluation(
             name=metric_name,
             value=score.value,
-            comment=("clean parse" if score.parsed_cleanly else "fallback extract"),
+            comment=(score.raw),
             metadata={
-                "raw": score.raw,
                 "extract_attempts": score.extract_attempts,
             },
         )
@@ -244,4 +249,5 @@ class Judge:
 
 
 def _metric_name(prompt_name: str) -> str:
-    return prompt_name.removeprefix(JUDGE_PROMPT_PREFIX) or prompt_name
+    prefix = f"{get_judge_config().prompt_folder}/"
+    return prompt_name.removeprefix(prefix) or prompt_name

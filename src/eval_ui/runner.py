@@ -53,6 +53,7 @@ class RunState:
     chunk_size: int
     chunk_overlap: int
     judge_prompts: list[str]
+    max_concurrency: int
     started_at: datetime
     status: RunStatus = RunStatus.PENDING
     session_id: str | None = None
@@ -62,15 +63,9 @@ class RunState:
 
 
 class EvalRunner:
-    def __init__(
-        self,
-        openai: AsyncOpenAI,
-        langfuse: Langfuse,
-        semaphore: asyncio.Semaphore,
-    ) -> None:
+    def __init__(self, openai: AsyncOpenAI, langfuse: Langfuse) -> None:
         self._openai = openai
         self._langfuse = langfuse
-        self._semaphore = semaphore
         self._runs: dict[str, RunState] = {}
 
     def start(
@@ -86,6 +81,7 @@ class EvalRunner:
         chunk_size: int,
         chunk_overlap: int,
         judge_prompts: Sequence[str],
+        max_concurrency: int,
     ) -> RunState:
         run_id = f"run-{uuid.uuid4().hex[:8]}"
         state = RunState(
@@ -100,6 +96,7 @@ class EvalRunner:
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             judge_prompts=list(judge_prompts),
+            max_concurrency=max_concurrency,
             started_at=datetime.now(UTC),
         )
         self._runs[run_id] = state
@@ -129,12 +126,12 @@ class EvalRunner:
                 self._langfuse,
                 embedding_model=state.embedding_model,
                 rerank_model=state.rerank_model,
-                semaphore=self._semaphore,
             )
             await pipeline.build(
                 state.corpus_datasets,
                 chunk_size=state.chunk_size,
                 chunk_overlap=state.chunk_overlap,
+                max_concurrency=state.max_concurrency,
             )
 
             judge = Judge(
@@ -145,11 +142,12 @@ class EvalRunner:
                 eval_model=state.eval_model,
                 judge_prompts=state.judge_prompts,
                 k=state.k,
-                semaphore=self._semaphore,
             )
             state.session_id = judge.session_id
             state.status = RunStatus.JUDGING
-            await judge.run(state.question_datasets, state.corpus_datasets)
+            await judge.run(
+                state.question_datasets, state.corpus_datasets, state.max_concurrency
+            )
             state.status = RunStatus.COMPLETED
             logger.info("run %s completed", state.run_id)
         except Exception as exc:

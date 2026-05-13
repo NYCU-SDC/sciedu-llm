@@ -76,7 +76,7 @@ place (the dataset itself, and any prior runs against it, are preserved).
 
 One dataset per `(subject, grade, semester)` group:
 
-- Dataset name: `corpus-<subject>-<grade>` or `corpus-<subject>-<grade>-<semester>`.
+- Dataset name: `corpus/<subject>-<grade>` or `corpus/<subject>-<grade>-<semester>` (the `corpus/` prefix groups them under Langfuse's "corpus" folder).
 - One item per chapter file:
   - `input = {"content": <full file text>}`
   - `expected_output = None`
@@ -84,7 +84,7 @@ One dataset per `(subject, grade, semester)` group:
 
 ### `seed_questions.py`
 
-One dataset per subject (`questions-<subject>`). Per row:
+One dataset per subject (`questions/<subject>`, grouped under Langfuse's "questions" folder). Per row:
 
 - `input = {"question": <題目內容>}`
 - `expected_output = {"gold_answer": <答案分析>, "ref_text": <JSON string>, "ref_text_coords": <JSON string>}`

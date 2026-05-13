@@ -13,20 +13,17 @@ from datetime import UTC, datetime
 
 import gradio as gr
 from dotenv import load_dotenv
-from langfuse import Langfuse, get_client
+from langfuse import Langfuse
 from openai import AsyncOpenAI
 
+from eval_ui.config import get_eval_ui_config
 from eval_ui.runner import EvalRunner, RunState
+from judge.config import get_judge_config
+from observability import init_langfuse_client
+from rag.config import get_rag_config
 
 logger = logging.getLogger(__name__)
 
-CORPUS_PREFIX = "corpus-"
-QUESTIONS_PREFIX = "questions-"
-JUDGE_PROMPT_PREFIX = "judge-"
-DEFAULT_EMBEDDING_MODEL = "bge-m3"
-DEFAULT_RERANK_MODEL = "BGE-Reranker-V2-M3"
-DEFAULT_CHUNK_SIZE = 500
-DEFAULT_CHUNK_OVERLAP = 100
 RUNS_TABLE_HEADERS = [
     "run_id",
     "status",
@@ -42,12 +39,19 @@ RUNS_TABLE_HEADERS = [
 ]
 
 
-def list_dataset_names(langfuse: Langfuse) -> tuple[list[str], list[str]]:
-    """Return (corpus_names, question_names) sorted alphabetically.
+def list_dataset_names(
+    langfuse: Langfuse,
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """Return (corpus_choices, question_choices) sorted alphabetically.
+
+    Each choice is a (display_label, full_name) tuple — Gradio shows the label
+    while passing the full name (with folder prefix) back as the selected value
+    so downstream API calls still receive the canonical Langfuse dataset name.
 
     Falls back to ([], []) on any API failure so the UI can still render and
     the user gets a visible error rather than a crash.
     """
+    config = get_eval_ui_config()
     try:
         names: list[str] = []
         page = 1
@@ -61,16 +65,29 @@ def list_dataset_names(langfuse: Langfuse) -> tuple[list[str], list[str]]:
         logger.exception("Failed to list Langfuse datasets")
         return [], []
 
-    corpus = sorted(n for n in names if n.startswith(CORPUS_PREFIX))
-    questions = sorted(n for n in names if n.startswith(QUESTIONS_PREFIX))
+    corpus_prefix = f"{config.corpus_dataset_folder}/"
+    questions_prefix = f"{config.questions_dataset_folder}/"
+    corpus = sorted(
+        (n.removeprefix(corpus_prefix), n) for n in names if n.startswith(corpus_prefix)
+    )
+    questions = sorted(
+        (n.removeprefix(questions_prefix), n)
+        for n in names
+        if n.startswith(questions_prefix)
+    )
     return corpus, questions
 
 
-def list_judge_prompt_names(langfuse: Langfuse) -> list[str]:
-    """Return Langfuse prompt names starting with `judge-`, sorted alphabetically.
+def list_judge_prompt_names(langfuse: Langfuse) -> list[tuple[str, str]]:
+    """Return judge prompt choices as (display_label, full_name) tuples, sorted.
+
+    Filters Langfuse prompts to those under the configured judge folder. Gradio
+    renders the label (without the folder prefix) while the selected value
+    remains the canonical Langfuse prompt name so downstream API calls work.
 
     Falls back to [] on any API failure so the UI still renders.
     """
+    prefix = f"{get_judge_config().prompt_folder}/"
     try:
         names: list[str] = []
         page = 1
@@ -84,7 +101,7 @@ def list_judge_prompt_names(langfuse: Langfuse) -> list[str]:
         logger.exception("Failed to list Langfuse prompts")
         return []
 
-    return sorted(n for n in names if n.startswith(JUDGE_PROMPT_PREFIX))
+    return sorted((n.removeprefix(prefix), n) for n in names if n.startswith(prefix))
 
 
 def list_model_ids(openai: AsyncOpenAI) -> list[str]:
@@ -138,6 +155,7 @@ def _runs_to_rows(runs: list[RunState]) -> list[list[str]]:
 def build_demo(
     runner: EvalRunner, langfuse: Langfuse, openai: AsyncOpenAI
 ) -> gr.Blocks:
+    rag_config = get_rag_config()
     default_eval = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-oss-120b")
     default_judge = os.getenv("JUDGE_MODEL", default_eval)
     initial_corpus, initial_questions = list_dataset_names(langfuse)
@@ -146,8 +164,8 @@ def build_demo(
 
     eval_choices = _ensure_choice(initial_models, default_eval)
     judge_choices = _ensure_choice(initial_models, default_judge)
-    embedding_choices = _ensure_choice(initial_models, DEFAULT_EMBEDDING_MODEL)
-    rerank_choices = _ensure_choice(initial_models, DEFAULT_RERANK_MODEL)
+    embedding_choices = _ensure_choice(initial_models, rag_config.embedding_model)
+    rerank_choices = _ensure_choice(initial_models, rag_config.rerank_model)
 
     with gr.Blocks(title="sciedu-llm — RAG Eval Runner") as demo:
         gr.Markdown("# sciedu-llm — RAG Eval Runner")
@@ -191,7 +209,7 @@ def build_demo(
                 judge_select = gr.CheckboxGroup(
                     label="Judge evaluators (Langfuse prompts)",
                     choices=initial_judges,
-                    value=initial_judges,
+                    value=[full for _, full in initial_judges],
                 )
                 refresh_btn = gr.Button("Refresh datasets, models, and judges")
 
@@ -200,27 +218,27 @@ def build_demo(
                 embedding_model = gr.Dropdown(
                     label="Embedding model",
                     choices=embedding_choices,
-                    value=DEFAULT_EMBEDDING_MODEL,
+                    value=rag_config.embedding_model,
                     allow_custom_value=True,
                     filterable=True,
                 )
                 rerank_model = gr.Dropdown(
                     label="Rerank model",
                     choices=rerank_choices,
-                    value=DEFAULT_RERANK_MODEL,
+                    value=rag_config.rerank_model,
                     allow_custom_value=True,
                     filterable=True,
                 )
             with gr.Row():
                 chunk_size = gr.Number(
                     label="Chunk size",
-                    value=DEFAULT_CHUNK_SIZE,
+                    value=rag_config.chunk_size,
                     precision=0,
                     minimum=1,
                 )
                 chunk_overlap = gr.Number(
                     label="Chunk overlap",
-                    value=DEFAULT_CHUNK_OVERLAP,
+                    value=rag_config.chunk_overlap,
                     precision=0,
                     minimum=0,
                 )
@@ -291,6 +309,7 @@ def build_demo(
                 chunk_size=chunk_sz_int,
                 chunk_overlap=chunk_ov_int,
                 judge_prompts=judges_sel,
+                max_concurrency=rag_config.max_concurrency,
             )
             return (
                 gr.update(
@@ -311,11 +330,15 @@ def build_demo(
             if not models:
                 warnings.append("could not list models — check OPENAI_BASE_URL")
             if not judges:
-                warnings.append("no Langfuse prompts starting with 'judge-' found")
+                judge_folder = get_judge_config().prompt_folder
+                warnings.append(
+                    f"no Langfuse prompts under '{judge_folder}/' folder found"
+                )
+            judge_values = [full for _, full in judges]
             return (
                 gr.update(choices=corpus),
                 gr.update(choices=questions),
-                gr.update(choices=judges, value=judges),
+                gr.update(choices=judges, value=judge_values),
                 gr.update(choices=models),
                 gr.update(choices=models),
                 gr.update(choices=models),
@@ -385,15 +408,13 @@ def main() -> None:
     )
 
     openai_client = AsyncOpenAI()
-    langfuse_client = get_client()
-    max_concurrency = int(os.getenv("RAG_MAX_CONCURRENCY", "64"))
-    semaphore = asyncio.Semaphore(max_concurrency)
-    runner = EvalRunner(openai_client, langfuse_client, semaphore)
+    langfuse_client = init_langfuse_client()
+    runner = EvalRunner(openai_client, langfuse_client)
 
     demo = build_demo(runner, langfuse_client, openai_client)
     demo.queue().launch(
         server_name="0.0.0.0",
-        server_port=int(os.getenv("EVAL_UI_PORT", "7860")),
+        server_port=get_eval_ui_config().port,
         show_error=True,
     )
 

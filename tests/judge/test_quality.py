@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,8 +18,8 @@ class _FakePrompt:
 class _FakeLangfuse:
     def __init__(self) -> None:
         self.prompts_by_name = {
-            "judge-factuality": _FakePrompt("judge-factuality"),
-            "judge-conciseness": _FakePrompt("judge-conciseness"),
+            "judge/factuality": _FakePrompt("judge/factuality"),
+            "judge/conciseness": _FakePrompt("judge/conciseness"),
             "extract-score-from-judgement": _FakePrompt("extract-score-from-judgement"),
         }
 
@@ -37,7 +36,8 @@ class _FakeLangfuse:
 
 def _completion(content: str):
     return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=content))]
+        choices=[SimpleNamespace(message=SimpleNamespace(content=content))],
+        usage=SimpleNamespace(prompt_tokens=0, completion_tokens=0),
     )
 
 
@@ -69,7 +69,7 @@ async def test_score_parses_last_token_when_clean():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -90,7 +90,7 @@ async def test_score_strips_punctuation_around_token():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -117,7 +117,7 @@ async def test_score_falls_back_to_extract_then_succeeds():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -139,7 +139,7 @@ async def test_score_returns_failed_after_exhausted_retries():
     )
 
     result = await judge.score(
-        prompt_name="judge-factuality",
+        prompt_name="judge/factuality",
         question="q",
         generation="g",
         ideal="i",
@@ -148,26 +148,3 @@ async def test_score_returns_failed_after_exhausted_retries():
     assert result.value == FAILED_SCORE
     assert result.extract_attempts == 10
     assert openai.calls == 11  # 1 judge + 10 extract attempts
-
-
-@pytest.mark.asyncio
-async def test_score_uses_semaphore_when_provided():
-    sem = asyncio.Semaphore(1)
-    sem.acquire = MagicMock(wraps=sem.acquire)
-    openai = _FakeOpenAI(["3"])
-    judge = LLMQualityJudge(
-        openai=openai,
-        langfuse=_FakeLangfuse(),
-        judge_model="judge-m",
-        semaphore=sem,
-    )
-
-    result = await judge.score(
-        prompt_name="judge-factuality",
-        question="q",
-        generation="g",
-        ideal="i",
-        references="r",
-    )
-    assert result.value == 3.0
-    assert sem.acquire.called

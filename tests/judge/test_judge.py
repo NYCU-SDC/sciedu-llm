@@ -63,7 +63,7 @@ def _make_judge(
     langfuse: _FakeLangfuse,
     *,
     k: int = 5,
-    judge_prompts=["judge-factuality", "judge-conciseness"],
+    judge_prompts=["judge/factuality", "judge/conciseness"],
 ) -> Judge:
     openai = SimpleNamespace()  # never used directly when we monkey-patch quality
     return Judge(
@@ -165,7 +165,7 @@ async def test_quality_evaluator_compiles_prompt_inputs_from_expected_output():
     assert isinstance(result, Evaluation)
     assert result.name == "factuality"
     assert result.value == 7.0
-    assert captured[0]["prompt_name"] == "judge-factuality"
+    assert captured[0]["prompt_name"] == "judge/factuality"
     assert captured[0]["question"] == "Q?"
     assert captured[0]["generation"] == "G"
     assert captured[0]["ideal"] == "the answer is 42"
@@ -179,7 +179,7 @@ async def test_judge_generates_one_evaluator_per_prompt_with_correct_metric_name
     judge = _make_judge(
         pipeline,
         _FakeLangfuse(),
-        judge_prompts=["judge-factuality", "judge-conciseness", "judge-helpfulness"],
+        judge_prompts=["judge/factuality", "judge/conciseness", "judge/helpfulness"],
     )
 
     captured: list[dict] = []
@@ -209,9 +209,9 @@ async def test_judge_generates_one_evaluator_per_prompt_with_correct_metric_name
     assert [r[1].name for r in results] == ["factuality", "conciseness", "helpfulness"]
     # Each closure must forward its OWN prompt_name, not the last one in the loop.
     assert [c["prompt_name"] for c in captured] == [
-        "judge-factuality",
-        "judge-conciseness",
-        "judge-helpfulness",
+        "judge/factuality",
+        "judge/conciseness",
+        "judge/helpfulness",
     ]
 
 
@@ -252,6 +252,7 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
     results = await judge.run(
         ["questions-biology", "questions-physical"],
         ["corpus-biology", "corpus-physical"],
+        max_concurrency=8,
     )
 
     assert len(results) == 2
@@ -264,6 +265,7 @@ async def test_run_invokes_dataset_run_experiment_per_dataset():
     for call in captured_calls:
         assert len(call["evaluators"]) == 3
         assert call["evaluators"][0] == judge._retrieval_evaluator
+        assert call["max_concurrency"] == 8
     assert langfuse.scores == []
     assert langfuse.flushed is True
 

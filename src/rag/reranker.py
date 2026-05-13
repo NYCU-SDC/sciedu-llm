@@ -1,5 +1,3 @@
-import asyncio
-
 import httpx
 
 from rag.retry import (
@@ -18,7 +16,6 @@ class Reranker:
         base_url: str,
         api_key: str,
         model: str = "BGE-Reranker-V2-M3",
-        semaphore: asyncio.Semaphore | None = None,
         timeout: float = 30.0,
     ) -> None:
         self._url = base_url.rstrip("/") + "/rerank"
@@ -27,7 +24,6 @@ class Reranker:
             "Content-Type": "application/json",
         }
         self._model = model
-        self._semaphore = semaphore
         self._timeout = timeout
 
     async def rerank(
@@ -56,11 +52,7 @@ class Reranker:
             async with httpx.AsyncClient(timeout=self._timeout) as client:
                 return await client.post(self._url, headers=self._headers, json=payload)
 
-        if self._semaphore is not None:
-            async with self._semaphore:
-                response = await _send()
-        else:
-            response = await _send()
+        response = await _send()
 
         response.raise_for_status()
         return response.json()

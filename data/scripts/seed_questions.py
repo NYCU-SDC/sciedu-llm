@@ -141,7 +141,7 @@ def main() -> None:
 
     for xlsx_path in tqdm(xlsx_files, desc="Subjects", unit="subject"):
         subject = xlsx_path.stem.removesuffix("_questions")
-        name = f"questions-{subject}"
+        name = f"questions/{subject}"
 
         items = parse_xlsx(xlsx_path, logger)
         if not items:
