@@ -1,5 +1,6 @@
 import json
 import os
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
@@ -7,8 +8,32 @@ os.environ["OPENAI_API_KEY"] = "mock_key"
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_openai_client
+from app.dependencies import get_langfuse_client, get_openai_client
 from app.main import app
+
+
+class _FakeSpan:
+    def __init__(self):
+        self.updates: list[dict] = []
+
+    def update(self, **kwargs):
+        self.updates.append(kwargs)
+
+
+class _FakeLangfuse:
+    def __init__(self):
+        self.spans: list[_FakeSpan] = []
+        self.observations: list[dict] = []
+
+    @contextmanager
+    def start_as_current_observation(self, **kwargs):
+        self.observations.append(kwargs)
+        span = _FakeSpan()
+        self.spans.append(span)
+        yield span
+
+    def update_current_generation(self, **_kw):
+        pass
 
 
 def _chunk(content: str | None = None, finish_reason: str | None = None):
@@ -71,8 +96,15 @@ def _make_fake_openai(*, stream_chunks=None, completion=None, exc=None):
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def fake_langfuse():
+    return _FakeLangfuse()
+
+
+@pytest.fixture
+def client(fake_langfuse):
+    app.dependency_overrides[get_langfuse_client] = lambda: fake_langfuse
+    yield TestClient(app)
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture
@@ -268,3 +300,85 @@ def test_chat_rejects_invalid_request_body(client):
         json={"messages": [{"role": "user", "content": "Hi"}]},
     )
     assert response.status_code == 422
+
+
+def _completion_with_usage(
+    content: str, finish_reason: str | None = "stop", *, prompt=5, completion=7
+):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=prompt, completion_tokens=completion),
+    )
+
+
+def test_chat_non_streaming_creates_langfuse_generation(
+    client, override_openai, fake_langfuse
+):
+    override_openai(completion=_completion_with_usage("Hi back", "stop"))
+
+    response = client.post(
+        "/chat",
+        json={"messages": [{"role": "user", "content": "Hi"}], "stream": False},
+    )
+
+    assert response.status_code == 200
+    assert len(fake_langfuse.observations) == 1
+    obs = fake_langfuse.observations[0]
+    assert obs["name"] == "chat"
+    assert obs["as_type"] == "generation"
+    assert obs["model"] == "gpt-oss-120b"
+    assert obs["input"] == {"messages": [{"role": "user", "content": "Hi"}]}
+    assert obs["metadata"]["stream"] is False
+
+    update = fake_langfuse.spans[0].updates[0]
+    assert update["output"] == "Hi back"
+    assert update["usage_details"] == {"input": 5, "output": 7}
+
+
+def test_chat_non_streaming_handles_missing_usage(
+    client, override_openai, fake_langfuse
+):
+    override_openai(completion=_completion("Hi back", "stop"))
+
+    client.post(
+        "/chat",
+        json={"messages": [{"role": "user", "content": "Hi"}], "stream": False},
+    )
+
+    update = fake_langfuse.spans[0].updates[0]
+    assert update["usage_details"] is None
+
+
+def test_chat_streaming_records_accumulated_output_in_langfuse(
+    client, override_openai, fake_langfuse
+):
+    override_openai(
+        stream_chunks=[
+            _chunk("Hello"),
+            _chunk(", "),
+            _chunk("world!"),
+            _chunk(None, "stop"),
+        ]
+    )
+
+    response = client.post(
+        "/chat",
+        json={"messages": [{"role": "user", "content": "Hi"}], "stream": True},
+    )
+    assert response.status_code == 200
+
+    assert len(fake_langfuse.observations) == 1
+    obs = fake_langfuse.observations[0]
+    assert obs["name"] == "chat"
+    assert obs["as_type"] == "generation"
+    assert obs["metadata"]["stream"] is True
+
+    update = fake_langfuse.spans[0].updates[0]
+    assert update["output"] == "Hello, world!"
+    assert update["metadata"] == {"stream": True, "finish_reason": "stop"}
+    assert update["usage_details"] is None
