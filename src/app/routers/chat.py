@@ -119,7 +119,10 @@ async def chat(
                 if not delta_content and not is_finished:
                     continue
 
-                response_chunk = {"delta": delta_content or "", "isFinished": is_finished}
+                response_chunk = {
+                    "delta": delta_content or "",
+                    "isFinished": is_finished,
+                }
                 yield f"data: {json.dumps(response_chunk)}\n\n"
 
             span.update(
