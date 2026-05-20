@@ -23,10 +23,18 @@ class ChatResponseChunk(BaseModel):
     isFinished: bool
 
 
-CHAT_SSE_RESPONSE: dict[int | str, dict[str, Any]] = {
+class ChatResponse(BaseModel):
+    content: str
+    finishReason: Optional[str] = None
+
+
+CHAT_RESPONSE: dict[int | str, dict[str, Any]] = {
     200: {
         "content": {
-            "text/event-stream": {"example": {"delta": "string", "isFinished": False}}
+            "text/event-stream": {"example": {"delta": "string", "isFinished": False}},
+            "application/json": {
+                "example": {"content": "Hello!", "finishReason": "stop"}
+            },
         }
     },
     502: {

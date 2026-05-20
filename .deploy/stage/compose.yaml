@@ -11,6 +11,7 @@ services:
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
+      LANGFUSE_TRACING_ENVIRONMENT: stage
 
     labels:
       - "vector.enable=true"
