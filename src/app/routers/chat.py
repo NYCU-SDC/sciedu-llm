@@ -77,6 +77,7 @@ async def chat(
             model=model,
             messages=request.messages,
             stream=True,
+            stream_options={"include_usage": True},
         )
     except Exception as e:
         raise HTTPException(
