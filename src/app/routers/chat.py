@@ -102,7 +102,7 @@ async def chat(
 
                 if len(chunk.choices) == 0:
                     logger.warning(
-                        "recieved empty chunk from OpenAI API, skipping SSE response..."
+                        "received empty chunk from OpenAI API, skipping SSE response..."
                     )
                     continue
 
