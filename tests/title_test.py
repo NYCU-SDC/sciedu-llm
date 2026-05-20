@@ -62,7 +62,9 @@ def _make_openai(*contents: str):
         return completions[i]
 
     return SimpleNamespace(
-        chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(side_effect=create))),
+        chat=SimpleNamespace(
+            completions=SimpleNamespace(create=AsyncMock(side_effect=create))
+        ),
         _calls=counter,
     )
 

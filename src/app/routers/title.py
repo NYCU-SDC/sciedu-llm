@@ -52,9 +52,7 @@ def _sanitize_title(raw: str) -> str:
 
 
 @with_openai_retry()
-async def _call_llm(
-    openai, *, model: str, messages: list[ChatCompletionMessageParam]
-):
+async def _call_llm(openai, *, model: str, messages: list[ChatCompletionMessageParam]):
     return await openai.chat.completions.create(model=model, messages=messages)
 
 

@@ -25,9 +25,7 @@ class ChatTitleResponse(BaseModel):
 
 CHAT_TITLE_RESPONSES: dict[int | str, dict[str, Any]] = {
     200: {
-        "content": {
-            "application/json": {"example": {"title": "量子糾纏的基本概念"}}
-        }
+        "content": {"application/json": {"example": {"title": "量子糾纏的基本概念"}}}
     },
     422: {"description": "No usable user/assistant turns or empty model output"},
     502: {"description": "Upstream OpenAI or LangFuse error"},
