@@ -324,6 +324,68 @@ def test_chat_streaming_emits_error_event_on_openai_error(client, override_opena
     ]
 
 
+class _FakeAsyncStreamThenError:
+    """Yields the given chunks, then raises on the next iteration."""
+
+    def __init__(self, chunks, exc):
+        self._chunks = list(chunks)
+        self._exc = exc
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._chunks:
+            return self._chunks.pop(0)
+        raise self._exc
+
+
+def test_chat_streaming_records_partial_output_on_midstream_error(
+    client, fake_langfuse
+):
+    # A stream that produces two tokens and then fails mid-iteration.
+    completions = _FakeCompletions()
+
+    async def _create(**kwargs):
+        completions.calls.append(kwargs)
+        return _FakeAsyncStreamThenError(
+            [_chunk("Par"), _chunk("tial")], RuntimeError("mid-stream boom")
+        )
+
+    completions.create = _create  # type: ignore[method-assign]
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    app.dependency_overrides[get_openai_client] = lambda: fake
+    try:
+        response = client.post(
+            "/chat",
+            json={"messages": [{"role": "user", "content": "Hi"}], "stream": True},
+        )
+    finally:
+        app.dependency_overrides.pop(get_openai_client, None)
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    # The two produced tokens stream, then a terminal error event.
+    assert events == [
+        {"delta": "Par", "isFinished": False},
+        {"delta": "tial", "isFinished": False},
+        {
+            "delta": "",
+            "isFinished": True,
+            "error": "Error while communicating with the OpenAI API",
+        },
+    ]
+
+    # The partial content is recorded on the generation and the chat span, both
+    # marked as errored — not left empty.
+    generation_update = fake_langfuse.spans[1].updates[0]
+    assert generation_update["output"] == "Partial"
+    assert generation_update["level"] == "ERROR"
+    chat_span_update = fake_langfuse.spans[0].updates[0]
+    assert chat_span_update["output"] == "Partial"
+    assert chat_span_update["level"] == "ERROR"
+
+
 def test_chat_rejects_invalid_request_body(client):
     # `stream` is required by the schema
     response = client.post(
