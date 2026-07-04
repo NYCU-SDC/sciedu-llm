@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
+os.environ["ALLOWED_MODELS"] = "gpt-oss-120b,custom-model"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -165,6 +166,24 @@ def test_chat_non_streaming_uses_request_model_when_provided(client, override_op
     )
 
     assert completions.calls[0]["model"] == "custom-model"
+
+
+def test_chat_rejects_model_not_in_allowed_list(client, override_openai):
+    completions = override_openai(completion=_completion("ok"))
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stream": False,
+            "model": "gpt-4",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "not allowed" in response.json()["detail"]
+    # The disallowed request never reaches the OpenAI API.
+    assert completions.calls == []
 
 
 def test_chat_non_streaming_returns_502_when_no_choices(client, override_openai):

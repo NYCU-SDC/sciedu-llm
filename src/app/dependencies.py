@@ -1,3 +1,4 @@
+import logging
 from functools import cache
 from typing import Annotated
 
@@ -16,6 +17,12 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default=...)
     openai_default_model: str = "gpt-oss-120b"
 
+    # Comma-separated list of model ids the /chat endpoint is permitted to serve.
+    # Read from ALLOWED_MODELS. Must be non-empty — the app refuses to start
+    # otherwise (see `validate_allowed_models`). Requests asking for a model
+    # outside this list are rejected with a 400.
+    allowed_models: str = ""
+
     chat_title_prompt_name: str = "app/chat-title-generator"
     chat_title_max_attempts: int = 3
 
@@ -32,6 +39,10 @@ class Settings(BaseSettings):
     @property
     def rag_corpus_dataset_names(self) -> list[str]:
         return [name.strip() for name in self.rag_corpus_datasets.split(",") if name.strip()]
+
+    @property
+    def allowed_model_names(self) -> list[str]:
+        return [name.strip() for name in self.allowed_models.split(",") if name.strip()]
 
 
 @cache
@@ -62,6 +73,46 @@ def get_langfuse_client() -> Langfuse:
 
 
 langfuse_dependency = Annotated[Langfuse, Depends(get_langfuse_client)]
+
+
+async def validate_allowed_models() -> list[str]:
+    """Validate the configured ALLOWED_MODELS at startup.
+
+    Ensures at least one model is configured (raising ``ValueError`` otherwise) and
+    warns for any allowed model that the upstream OpenAI-compatible server does not
+    advertise via its ``/models`` endpoint. A failed listing only logs — the models
+    endpoint is best-effort and should not block startup. Returns the validated
+    list of allowed model names. Called once from the app lifespan.
+    """
+    settings = get_settings()
+    allowed = settings.allowed_model_names
+    if not allowed:
+        raise ValueError(
+            "No allowed models configured. Set ALLOWED_MODELS to a comma-separated "
+            "list of model ids the /chat endpoint is permitted to serve."
+        )
+
+    logger = logging.getLogger(__name__)
+    client = get_openai_client()
+    try:
+        served = {model.id async for model in client.models.list()}
+    except Exception:
+        logger.exception(
+            "Could not fetch the model list from %s to validate ALLOWED_MODELS; "
+            "skipping the availability check",
+            settings.openai_base_url,
+        )
+        return allowed
+
+    unknown = [name for name in allowed if name not in served]
+    if unknown:
+        logger.warning(
+            "Allowed models not advertised by the OpenAI models endpoint (%s): %s",
+            settings.openai_base_url,
+            ", ".join(unknown),
+        )
+
+    return allowed
 
 
 async def build_rag_pipeline() -> RAGPipeline | None:

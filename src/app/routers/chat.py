@@ -49,6 +49,19 @@ async def chat(
 ):
     model = request.model or settings.openai_default_model
 
+    # Enforce the configured allow-list. Startup validation guarantees it is
+    # non-empty in a real deployment, so an empty list here means the endpoint is
+    # running unconfigured (e.g. in tests) and no restriction is applied.
+    allowed_models = settings.allowed_model_names
+    if allowed_models and model not in allowed_models:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Model '{model}' is not allowed. "
+                f"Allowed models: {', '.join(allowed_models)}."
+            ),
+        )
+
     # Optional Langfuse trace attributes for grouping/filtering. When either is
     # provided they are propagated onto the generation span (and any child spans)
     # via `propagate_attributes`, which must wrap the observation.

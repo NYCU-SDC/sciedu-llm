@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.dependencies import build_rag_pipeline, get_settings
+from app.dependencies import build_rag_pipeline, get_settings, validate_allowed_models
 from app.routers import chat, health, title
 
 load_dotenv()
@@ -21,6 +21,9 @@ async def lifespan(app: FastAPI):
     settings = get_settings()  # Forces loading of settings
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
+
+    allowed_models = await validate_allowed_models()
+    logger.info("Allowed chat models: %s", allowed_models)
 
     app.state.rag_pipeline = await build_rag_pipeline()
     if app.state.rag_pipeline is not None:
