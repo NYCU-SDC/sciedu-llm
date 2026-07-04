@@ -8,6 +8,8 @@ services:
       HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
+      OPENAI_DEFAULT_MODEL: "gpt-oss-120b"
+      ALLOWED_MODELS: "gpt-oss-120b,gemma-4-31B-it"
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
@@ -32,6 +34,7 @@ services:
       HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
+      OPENAI_DEFAULT_MODEL: "gpt-oss-120b"
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"

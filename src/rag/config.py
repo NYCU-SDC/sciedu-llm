@@ -13,7 +13,8 @@ class RAGConfig(BaseSettings):
     max_concurrency: int = Field(default=64, gt=0)
     chunk_size: int = Field(default=500, gt=0)
     chunk_overlap: int = Field(default=100, ge=0)
-    generator_prompt_name: str = "rag-generator-instruction"
+    generator_system_prompt_name: str = "rag-generator-system"
+    generator_user_prompt_name: str = "rag-generator-user"
 
     model_config = SettingsConfigDict(
         env_prefix="RAG_", env_file=".env", extra="ignore"
