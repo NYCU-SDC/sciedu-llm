@@ -16,8 +16,20 @@ class RAGConfig(BaseSettings):
     generator_system_prompt_name: str = "rag-generator-system"
     generator_user_prompt_name: str = "rag-generator-user"
 
+    # Retrieval knobs applied per query. Overridable at runtime via the admin API.
+    bm25_top_n: int = Field(default=50, gt=0)
+    dense_top_n: int = Field(default=50, gt=0)
+    rrf_k: int = Field(default=60, gt=0)
+    rerank_pool_size: int = Field(default=30, gt=0)
+    final_k: int = Field(default=5, gt=0)
+
+    # `validate_assignment` so runtime overrides (admin API) are re-validated when
+    # fields are set on an existing config instance, not just at construction.
     model_config = SettingsConfigDict(
-        env_prefix="RAG_", env_file=".env", extra="ignore"
+        env_prefix="RAG_",
+        env_file=".env",
+        extra="ignore",
+        validate_assignment=True,
     )
 
 

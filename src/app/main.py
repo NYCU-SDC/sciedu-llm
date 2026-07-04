@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.dependencies import build_rag_pipeline, get_settings, validate_allowed_models
-from app.routers import chat, health, title
+from app.routers import admin, chat, health, title
 
 load_dotenv()
 
@@ -54,3 +54,4 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(title.router)
+app.include_router(admin.router)
