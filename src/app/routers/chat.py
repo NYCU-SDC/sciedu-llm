@@ -110,13 +110,16 @@ async def chat(
         messages = [system_message, *messages]
 
     if not request.stream:
-        with trace_context(), langfuse.start_as_current_observation(
-            name="chat",
-            as_type="generation",
-            model=model,
-            input={"messages": messages},
-            metadata={"stream": False, "rag": request.enable_rag},
-        ) as span:
+        with (
+            trace_context(),
+            langfuse.start_as_current_observation(
+                name="chat",
+                as_type="generation",
+                model=model,
+                input={"messages": messages},
+                metadata={"stream": False, "rag": request.enable_rag},
+            ) as span,
+        ):
             if rag_prompt is not None:
                 langfuse.update_current_generation(prompt=rag_prompt)
             try:
@@ -167,13 +170,16 @@ async def chat(
         ) from e
 
     async def stream_response():
-        with trace_context(), langfuse.start_as_current_observation(
-            name="chat",
-            as_type="generation",
-            model=model,
-            input={"messages": messages},
-            metadata={"stream": True, "rag": request.enable_rag},
-        ) as span:
+        with (
+            trace_context(),
+            langfuse.start_as_current_observation(
+                name="chat",
+                as_type="generation",
+                model=model,
+                input={"messages": messages},
+                metadata={"stream": True, "rag": request.enable_rag},
+            ) as span,
+        ):
             if rag_prompt is not None:
                 langfuse.update_current_generation(prompt=rag_prompt)
             accumulated: list[str] = []

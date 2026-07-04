@@ -430,7 +430,9 @@ def override_rag():
     app.dependency_overrides.pop(get_rag_pipeline, None)
 
 
-def test_chat_rag_disabled_by_default_leaves_messages_untouched(client, override_openai):
+def test_chat_rag_disabled_by_default_leaves_messages_untouched(
+    client, override_openai
+):
     completions = override_openai(completion=_completion("ok"))
 
     client.post(

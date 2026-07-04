@@ -32,7 +32,9 @@ async def lifespan(app: FastAPI):
             settings.rag_corpus_dataset_names,
         )
     else:
-        logger.info("RAG disabled — no corpus datasets configured (RAG_CORPUS_DATASETS)")
+        logger.info(
+            "RAG disabled — no corpus datasets configured (RAG_CORPUS_DATASETS)"
+        )
 
     logger.info("Application successfully started")
     yield

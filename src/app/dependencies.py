@@ -38,7 +38,9 @@ class Settings(BaseSettings):
 
     @property
     def rag_corpus_dataset_names(self) -> list[str]:
-        return [name.strip() for name in self.rag_corpus_datasets.split(",") if name.strip()]
+        return [
+            name.strip() for name in self.rag_corpus_datasets.split(",") if name.strip()
+        ]
 
     @property
     def allowed_model_names(self) -> list[str]:
