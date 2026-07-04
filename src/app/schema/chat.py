@@ -9,6 +9,8 @@ class ChatRequest(BaseModel):
     stream: bool
     model: Optional[str] = None
     enable_rag: bool = False
+    session: Optional[str] = None
+    user: Optional[str] = None
     model_config = {
         "json_schema_extra": {
             "example": {

@@ -1,8 +1,10 @@
+import contextlib
 import json
 import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from langfuse import propagate_attributes
 from openai.types.chat import ChatCompletionMessageParam
 
 from app.dependencies import (
@@ -47,6 +49,17 @@ async def chat(
 ):
     model = request.model or settings.openai_default_model
 
+    # Optional Langfuse trace attributes for grouping/filtering. When either is
+    # provided they are propagated onto the generation span (and any child spans)
+    # via `propagate_attributes`, which must wrap the observation.
+    def trace_context():
+        if request.session is not None or request.user is not None:
+            return propagate_attributes(
+                session_id=request.session,
+                user_id=request.user,
+            )
+        return contextlib.nullcontext()
+
     # `messages` is what we actually send to the model. When RAG is enabled we
     # retain the full conversation history, prepend the RAG system instructions,
     # and swap only the latest user turn for a context-augmented one. Retrieval
@@ -84,7 +97,7 @@ async def chat(
         messages = [system_message, *messages]
 
     if not request.stream:
-        with langfuse.start_as_current_observation(
+        with trace_context(), langfuse.start_as_current_observation(
             name="chat",
             as_type="generation",
             model=model,
@@ -141,7 +154,7 @@ async def chat(
         ) from e
 
     async def stream_response():
-        with langfuse.start_as_current_observation(
+        with trace_context(), langfuse.start_as_current_observation(
             name="chat",
             as_type="generation",
             model=model,
