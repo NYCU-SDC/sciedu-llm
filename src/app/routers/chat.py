@@ -18,14 +18,17 @@ router = APIRouter(tags=["Chat"])
 logger = logging.getLogger(__name__)
 
 
-def _latest_user_text(messages: list[ChatCompletionMessageParam]) -> str | None:
-    """Return the most recent user message with plain string content, if any."""
-    for message in reversed(messages):
+def _latest_user_message(
+    messages: list[ChatCompletionMessageParam],
+) -> tuple[int, str] | None:
+    """Return (index, text) of the most recent user message with string content."""
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
         if message.get("role") != "user":
             continue
         content = message.get("content")
         if isinstance(content, str) and content.strip():
-            return content
+            return index, content
     return None
 
 
@@ -45,8 +48,10 @@ async def chat(
     model = request.model or settings.openai_default_model
 
     # `messages` is what we actually send to the model. When RAG is enabled we
-    # replace it with a retrieval-augmented single-turn [system, user] pair; the
-    # generator prompt (`rag_prompt`) is linked to the Langfuse generation below.
+    # retain the full conversation history, prepend the RAG system instructions,
+    # and swap only the latest user turn for a context-augmented one. Retrieval
+    # is keyed off the latest user query alone. The generator prompt
+    # (`rag_prompt`) is linked to the Langfuse generation below.
     messages: list[ChatCompletionMessageParam] = list(request.messages)
     rag_prompt = None
     if request.enable_rag:
@@ -55,16 +60,19 @@ async def chat(
                 status_code=503,
                 detail="RAG is not enabled on this server. Configure RAG_CORPUS_DATASETS to enable it.",
             )
-        query = _latest_user_text(request.messages)
-        if not query:
+        latest = _latest_user_message(request.messages)
+        if latest is None:
             raise HTTPException(
                 status_code=422,
                 detail="enable_rag=true requires a user message with text content.",
             )
+        user_index, query = latest
         try:
             retrieval = await rag_pipeline.retrieve(query=query)
-            compiled, rag_prompt = rag_pipeline.compile_generator_prompt(
-                context=retrieval["context"], query=query
+            system_message, augmented_user_message, rag_prompt = (
+                rag_pipeline.compile_generator_prompt(
+                    context=retrieval["context"], query=query
+                )
             )
         except Exception as e:
             logger.exception("RAG retrieval failed")
@@ -72,10 +80,8 @@ async def chat(
                 status_code=502,
                 detail=f"Error during RAG retrieval: {str(e)}",
             ) from e
-        messages = [
-            {"role": "system", "content": compiled},
-            {"role": "user", "content": query},
-        ]
+        messages[user_index] = augmented_user_message
+        messages = [system_message, *messages]
 
     if not request.stream:
         with langfuse.start_as_current_observation(

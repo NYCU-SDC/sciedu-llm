@@ -397,7 +397,9 @@ class _FakeRAGPipeline:
         return {"context": f"CTX for {query}", "reference_chunks": [1, 2]}
 
     def compile_generator_prompt(self, *, context: str, query: str):
-        return f"SYSTEM<{context}>", SimpleNamespace(name="rag-generator")
+        system_message = {"role": "system", "content": "SYSTEM INSTRUCTIONS"}
+        user_message = {"role": "user", "content": f"CTX<{context}> Q<{query}>"}
+        return system_message, user_message, SimpleNamespace(name="rag-generator-user")
 
 
 @pytest.fixture
@@ -459,8 +461,46 @@ def test_chat_enable_rag_augments_messages_with_retrieved_context(
     assert response.json() == {"content": "Grounded answer", "finishReason": "stop"}
     assert pipeline.retrieve_calls == ["What is photosynthesis?"]
     assert completions.calls[0]["messages"] == [
-        {"role": "system", "content": "SYSTEM<CTX for What is photosynthesis?>"},
-        {"role": "user", "content": "What is photosynthesis?"},
+        {"role": "system", "content": "SYSTEM INSTRUCTIONS"},
+        {
+            "role": "user",
+            "content": "CTX<CTX for What is photosynthesis?> Q<What is photosynthesis?>",
+        },
+    ]
+
+
+def test_chat_enable_rag_retains_conversation_history(
+    client, override_openai, override_rag
+):
+    completions = override_openai(completion=_completion("Grounded answer", "stop"))
+    pipeline = _FakeRAGPipeline()
+    override_rag(pipeline)
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [
+                {"role": "user", "content": "first question"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "user", "content": "second question"},
+            ],
+            "stream": False,
+            "enable_rag": True,
+        },
+    )
+
+    assert response.status_code == 200
+    # Retrieval keyed off the latest user turn only.
+    assert pipeline.retrieve_calls == ["second question"]
+    # History preserved; RAG system prepended; only the latest user turn augmented.
+    assert completions.calls[0]["messages"] == [
+        {"role": "system", "content": "SYSTEM INSTRUCTIONS"},
+        {"role": "user", "content": "first question"},
+        {"role": "assistant", "content": "first answer"},
+        {
+            "role": "user",
+            "content": "CTX<CTX for second question> Q<second question>",
+        },
     ]
 
 
@@ -487,10 +527,13 @@ def test_chat_enable_rag_streaming_uses_retrieved_context(
         {"delta": "Answer", "isFinished": False},
         {"delta": "", "isFinished": True},
     ]
-    assert completions.calls[0]["messages"][0]["role"] == "system"
+    assert completions.calls[0]["messages"][0] == {
+        "role": "system",
+        "content": "SYSTEM INSTRUCTIONS",
+    }
     assert completions.calls[0]["messages"][1] == {
         "role": "user",
-        "content": "Explain gravity",
+        "content": "CTX<CTX for Explain gravity> Q<Explain gravity>",
     }
 
 

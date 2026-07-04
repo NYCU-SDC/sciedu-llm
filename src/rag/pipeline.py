@@ -5,6 +5,7 @@ from typing import Any
 import numpy as np
 from langfuse import Langfuse
 from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessageParam
 
 from rag.chunker import CorpusChunker
 from rag.config import RAGConfig, get_rag_config
@@ -30,7 +31,8 @@ class RAGPipeline:
         *,
         embedding_model: str | None = None,
         rerank_model: str | None = None,
-        generator_prompt_name: str | None = None,
+        generator_system_prompt_name: str | None = None,
+        generator_user_prompt_name: str | None = None,
         config: RAGConfig | None = None,
     ) -> None:
         self._config = config or get_rag_config()
@@ -38,8 +40,11 @@ class RAGPipeline:
         self._langfuse = langfuse
         self._embedding_model = embedding_model or self._config.embedding_model
         self._rerank_model = rerank_model or self._config.rerank_model
-        self._generator_prompt_name = (
-            generator_prompt_name or self._config.generator_prompt_name
+        self._generator_system_prompt_name = (
+            generator_system_prompt_name or self._config.generator_system_prompt_name
+        )
+        self._generator_user_prompt_name = (
+            generator_user_prompt_name or self._config.generator_user_prompt_name
         )
         self._embedding_batch_size = self._config.embedding_batch_size
         self._reranker = Reranker(
@@ -173,16 +178,31 @@ class RAGPipeline:
         context = "\n\n".join(chunker.chunks[cid].text for cid in final_chunk_ids)
         return {"context": context, "reference_chunks": final_chunk_ids}
 
-    def compile_generator_prompt(self, *, context: str, query: str):
-        """Fetch the Langfuse generator prompt and compile it with context+query.
+    def compile_generator_prompt(
+        self, *, context: str, query: str
+    ) -> tuple[ChatCompletionMessageParam, ChatCompletionMessageParam, Any]:
+        """Compile the split generator prompts into separate system + user messages.
 
-        Returns ``(compiled_system_prompt, prompt)`` — the prompt object is
-        returned so callers can link it to their generation via
-        ``update_current_generation(prompt=...)``.
+        The system instructions come from ``generator_system_prompt_name`` (no
+        variables); ``generator_user_prompt_name`` injects the retrieved
+        ``context`` and the ``query``.
+
+        Returns ``(system_message, user_message, prompt)`` — the two messages are
+        ready to drop into a chat request, and ``prompt`` is the user prompt
+        object (the one carrying the dynamic variables) so callers can link it to
+        their generation via ``update_current_generation(prompt=...)``.
         """
-        prompt = self._langfuse.get_prompt(self._generator_prompt_name)
-        compiled = prompt.compile(context=context, query=query)
-        return compiled, prompt
+        system_prompt = self._langfuse.get_prompt(self._generator_system_prompt_name)
+        user_prompt = self._langfuse.get_prompt(self._generator_user_prompt_name)
+        system_message: ChatCompletionMessageParam = {
+            "role": "system",
+            "content": system_prompt.compile(),
+        }
+        user_message: ChatCompletionMessageParam = {
+            "role": "user",
+            "content": user_prompt.compile(context=context, query=query),
+        }
+        return system_message, user_message, user_prompt
 
     async def generate(
         self,
@@ -206,7 +226,9 @@ class RAGPipeline:
         )
         context = retrieval["context"]
         final_chunk_ids = retrieval["reference_chunks"]
-        compiled, prompt = self.compile_generator_prompt(context=context, query=query)
+        system_message, user_message, prompt = self.compile_generator_prompt(
+            context=context, query=query
+        )
 
         with self._langfuse.start_as_current_observation(
             name="rag-generate",
@@ -216,7 +238,7 @@ class RAGPipeline:
         ) as generation_span:
             self._langfuse.update_current_generation(prompt=prompt)
             response = await self._chat_complete(
-                model=model, system=compiled, query=query
+                model=model, messages=[system_message, user_message]
             )
             output_text = response.choices[0].message.content or ""
             usage = response.usage
@@ -273,13 +295,12 @@ class RAGPipeline:
         )
 
     @with_openai_retry()
-    async def _chat_complete(self, *, model: str, system: str, query: str):
+    async def _chat_complete(
+        self, *, model: str, messages: list[ChatCompletionMessageParam]
+    ):
         return await self._openai.chat.completions.create(
             model=model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": query},
-            ],
+            messages=messages,
         )
 
     def _require_built(self) -> CorpusChunker:
