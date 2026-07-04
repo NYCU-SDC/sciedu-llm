@@ -3,10 +3,12 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
+from openai.types.chat import ChatCompletionMessageParam
 
 from app.dependencies import (
     langfuse_dependency,
     openai_dependency,
+    rag_pipeline_dependency,
     settings_dependency,
 )
 from app.schema.chat import CHAT_RESPONSE, ChatRequest, ChatResponse
@@ -14,6 +16,17 @@ from app.schema.chat import CHAT_RESPONSE, ChatRequest, ChatResponse
 router = APIRouter(tags=["Chat"])
 
 logger = logging.getLogger(__name__)
+
+
+def _latest_user_text(messages: list[ChatCompletionMessageParam]) -> str | None:
+    """Return the most recent user message with plain string content, if any."""
+    for message in reversed(messages):
+        if message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+    return None
 
 
 @router.post(
@@ -27,21 +40,57 @@ async def chat(
     openai: openai_dependency,
     langfuse: langfuse_dependency,
     settings: settings_dependency,
+    rag_pipeline: rag_pipeline_dependency,
 ):
     model = request.model or settings.openai_default_model
+
+    # `messages` is what we actually send to the model. When RAG is enabled we
+    # replace it with a retrieval-augmented single-turn [system, user] pair; the
+    # generator prompt (`rag_prompt`) is linked to the Langfuse generation below.
+    messages: list[ChatCompletionMessageParam] = list(request.messages)
+    rag_prompt = None
+    if request.enable_rag:
+        if rag_pipeline is None:
+            raise HTTPException(
+                status_code=503,
+                detail="RAG is not enabled on this server. Configure RAG_CORPUS_DATASETS to enable it.",
+            )
+        query = _latest_user_text(request.messages)
+        if not query:
+            raise HTTPException(
+                status_code=422,
+                detail="enable_rag=true requires a user message with text content.",
+            )
+        try:
+            retrieval = await rag_pipeline.retrieve(query=query)
+            compiled, rag_prompt = rag_pipeline.compile_generator_prompt(
+                context=retrieval["context"], query=query
+            )
+        except Exception as e:
+            logger.exception("RAG retrieval failed")
+            raise HTTPException(
+                status_code=502,
+                detail=f"Error during RAG retrieval: {str(e)}",
+            ) from e
+        messages = [
+            {"role": "system", "content": compiled},
+            {"role": "user", "content": query},
+        ]
 
     if not request.stream:
         with langfuse.start_as_current_observation(
             name="chat",
             as_type="generation",
             model=model,
-            input={"messages": list(request.messages)},
-            metadata={"stream": False},
+            input={"messages": messages},
+            metadata={"stream": False, "rag": request.enable_rag},
         ) as span:
+            if rag_prompt is not None:
+                langfuse.update_current_generation(prompt=rag_prompt)
             try:
                 completion = await openai.chat.completions.create(
                     model=model,
-                    messages=request.messages,
+                    messages=messages,
                     stream=False,
                 )
             except Exception as e:
@@ -75,7 +124,7 @@ async def chat(
     try:
         streaming_response = await openai.chat.completions.create(
             model=model,
-            messages=request.messages,
+            messages=messages,
             stream=True,
             stream_options={"include_usage": True},
         )
@@ -90,9 +139,11 @@ async def chat(
             name="chat",
             as_type="generation",
             model=model,
-            input={"messages": list(request.messages)},
-            metadata={"stream": True},
+            input={"messages": messages},
+            metadata={"stream": True, "rag": request.enable_rag},
         ) as span:
+            if rag_prompt is not None:
+                langfuse.update_current_generation(prompt=rag_prompt)
             accumulated: list[str] = []
             finish_reason: str | None = None
             usage = None
@@ -133,7 +184,11 @@ async def chat(
                     if usage is not None
                     else None
                 ),
-                metadata={"stream": True, "finish_reason": finish_reason},
+                metadata={
+                    "stream": True,
+                    "rag": request.enable_rag,
+                    "finish_reason": finish_reason,
+                },
             )
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")

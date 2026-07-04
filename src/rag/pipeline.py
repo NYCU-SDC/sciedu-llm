@@ -117,18 +117,21 @@ class RAGPipeline:
         chunker = self._require_built()
         return chunker.resolve_chunks(chapter, start, end)
 
-    async def generate(
+    async def retrieve(
         self,
         *,
         query: str,
-        model: str,
         bm25_top_n: int = 50,
         dense_top_n: int = 50,
         rrf_k: int = 60,
         rerank_pool_size: int = 30,
         final_k: int = 5,
     ) -> dict[str, Any]:
-        """Run hybrid retrieval, rerank, and generate an answer for the query."""
+        """Run hybrid retrieval + rerank and return the top context for the query.
+
+        Returns a dict with the joined ``context`` string and the ordered
+        ``reference_chunks`` (chunk ids). Emits a ``rag-retrieve`` retriever span.
+        """
         chunker = self._require_built()
         assert self._dense is not None and self._bm25 is not None
 
@@ -167,9 +170,43 @@ class RAGPipeline:
                 },
             )
 
-        prompt = self._langfuse.get_prompt(self._generator_prompt_name)
         context = "\n\n".join(chunker.chunks[cid].text for cid in final_chunk_ids)
+        return {"context": context, "reference_chunks": final_chunk_ids}
+
+    def compile_generator_prompt(self, *, context: str, query: str):
+        """Fetch the Langfuse generator prompt and compile it with context+query.
+
+        Returns ``(compiled_system_prompt, prompt)`` — the prompt object is
+        returned so callers can link it to their generation via
+        ``update_current_generation(prompt=...)``.
+        """
+        prompt = self._langfuse.get_prompt(self._generator_prompt_name)
         compiled = prompt.compile(context=context, query=query)
+        return compiled, prompt
+
+    async def generate(
+        self,
+        *,
+        query: str,
+        model: str,
+        bm25_top_n: int = 50,
+        dense_top_n: int = 50,
+        rrf_k: int = 60,
+        rerank_pool_size: int = 30,
+        final_k: int = 5,
+    ) -> dict[str, Any]:
+        """Run hybrid retrieval, rerank, and generate an answer for the query."""
+        retrieval = await self.retrieve(
+            query=query,
+            bm25_top_n=bm25_top_n,
+            dense_top_n=dense_top_n,
+            rrf_k=rrf_k,
+            rerank_pool_size=rerank_pool_size,
+            final_k=final_k,
+        )
+        context = retrieval["context"]
+        final_chunk_ids = retrieval["reference_chunks"]
+        compiled, prompt = self.compile_generator_prompt(context=context, query=query)
 
         with self._langfuse.start_as_current_observation(
             name="rag-generate",

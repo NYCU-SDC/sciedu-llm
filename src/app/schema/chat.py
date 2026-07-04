@@ -8,11 +8,13 @@ class ChatRequest(BaseModel):
     messages: list[ChatCompletionMessageParam]
     stream: bool
     model: Optional[str] = None
+    enable_rag: bool = False
     model_config = {
         "json_schema_extra": {
             "example": {
                 "messages": [{"role": "user", "content": "Hello!"}],
                 "stream": True,
+                "enable_rag": False,
             }
         }
     }

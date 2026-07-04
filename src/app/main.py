@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.dependencies import get_settings
+from app.dependencies import build_rag_pipeline, get_settings
 from app.routers import chat, health, title
 
 load_dotenv()
@@ -18,9 +18,19 @@ logging.basicConfig(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    get_settings()  # Forces loading of settings
+    settings = get_settings()  # Forces loading of settings
     logger = logging.getLogger(__name__)
     logger.setLevel(logging.INFO)
+
+    app.state.rag_pipeline = await build_rag_pipeline()
+    if app.state.rag_pipeline is not None:
+        logger.info(
+            "RAG pipeline built from corpus datasets: %s",
+            settings.rag_corpus_dataset_names,
+        )
+    else:
+        logger.info("RAG disabled — no corpus datasets configured (RAG_CORPUS_DATASETS)")
+
     logger.info("Application successfully started")
     yield
 

@@ -8,7 +8,7 @@ os.environ["OPENAI_API_KEY"] = "mock_key"
 import pytest
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_langfuse_client, get_openai_client
+from app.dependencies import get_langfuse_client, get_openai_client, get_rag_pipeline
 from app.main import app
 
 
@@ -380,5 +380,134 @@ def test_chat_streaming_records_accumulated_output_in_langfuse(
 
     update = fake_langfuse.spans[0].updates[0]
     assert update["output"] == "Hello, world!"
-    assert update["metadata"] == {"stream": True, "finish_reason": "stop"}
+    assert update["metadata"] == {
+        "stream": True,
+        "rag": False,
+        "finish_reason": "stop",
+    }
     assert update["usage_details"] is None
+
+
+class _FakeRAGPipeline:
+    def __init__(self):
+        self.retrieve_calls: list[str] = []
+
+    async def retrieve(self, *, query: str, **_kwargs):
+        self.retrieve_calls.append(query)
+        return {"context": f"CTX for {query}", "reference_chunks": [1, 2]}
+
+    def compile_generator_prompt(self, *, context: str, query: str):
+        return f"SYSTEM<{context}>", SimpleNamespace(name="rag-generator")
+
+
+@pytest.fixture
+def override_rag():
+    def _install(pipeline):
+        app.dependency_overrides[get_rag_pipeline] = lambda: pipeline
+
+    yield _install
+    app.dependency_overrides.pop(get_rag_pipeline, None)
+
+
+def test_chat_rag_disabled_by_default_leaves_messages_untouched(client, override_openai):
+    completions = override_openai(completion=_completion("ok"))
+
+    client.post(
+        "/chat",
+        json={"messages": [{"role": "user", "content": "Hi"}], "stream": False},
+    )
+
+    assert completions.calls[0]["messages"] == [{"role": "user", "content": "Hi"}]
+
+
+def test_chat_enable_rag_returns_503_when_pipeline_unavailable(
+    client, override_openai, override_rag
+):
+    override_openai(completion=_completion("ok"))
+    override_rag(None)
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stream": False,
+            "enable_rag": True,
+        },
+    )
+
+    assert response.status_code == 503
+    assert "RAG is not enabled" in response.json()["detail"]
+
+
+def test_chat_enable_rag_augments_messages_with_retrieved_context(
+    client, override_openai, override_rag
+):
+    completions = override_openai(completion=_completion("Grounded answer", "stop"))
+    pipeline = _FakeRAGPipeline()
+    override_rag(pipeline)
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "user", "content": "What is photosynthesis?"}],
+            "stream": False,
+            "enable_rag": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"content": "Grounded answer", "finishReason": "stop"}
+    assert pipeline.retrieve_calls == ["What is photosynthesis?"]
+    assert completions.calls[0]["messages"] == [
+        {"role": "system", "content": "SYSTEM<CTX for What is photosynthesis?>"},
+        {"role": "user", "content": "What is photosynthesis?"},
+    ]
+
+
+def test_chat_enable_rag_streaming_uses_retrieved_context(
+    client, override_openai, override_rag
+):
+    completions = override_openai(
+        stream_chunks=[_chunk("Answer"), _chunk(None, "stop")]
+    )
+    override_rag(_FakeRAGPipeline())
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "user", "content": "Explain gravity"}],
+            "stream": True,
+            "enable_rag": True,
+        },
+    )
+
+    assert response.status_code == 200
+    events = _parse_sse(response.text)
+    assert events == [
+        {"delta": "Answer", "isFinished": False},
+        {"delta": "", "isFinished": True},
+    ]
+    assert completions.calls[0]["messages"][0]["role"] == "system"
+    assert completions.calls[0]["messages"][1] == {
+        "role": "user",
+        "content": "Explain gravity",
+    }
+
+
+def test_chat_enable_rag_returns_422_without_user_text(
+    client, override_openai, override_rag
+):
+    override_openai(completion=_completion("ok"))
+    override_rag(_FakeRAGPipeline())
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "assistant", "content": "prior turn"}],
+            "stream": False,
+            "enable_rag": True,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "user message" in response.json()["detail"]
