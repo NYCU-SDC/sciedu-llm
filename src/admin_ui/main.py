@@ -394,7 +394,10 @@ def build_demo(client: AdminClient, langfuse: Langfuse) -> gr.Blocks:
                             all_box.input(
                                 _folder_toggle(under),
                                 inputs=[all_box, selected_state],
-                                outputs=[selected_state, *(leaf_boxes[n] for n in under)],
+                                outputs=[
+                                    selected_state,
+                                    *(leaf_boxes[n] for n in under),
+                                ],
                             )
 
                 if not tree["datasets"] and not tree["folders"]:
