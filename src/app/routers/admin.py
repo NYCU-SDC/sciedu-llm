@@ -35,10 +35,19 @@ def _snapshot_response(pipeline: RAGPipeline) -> RAGConfigResponse:
     )
 
 
-async def _rebuild(pipeline: RAGPipeline) -> None:
-    """Rebuild the indexes, surfacing failures as a 502."""
+async def _rebuild(
+    pipeline: RAGPipeline, corpus_datasets: list[str] | None = None
+) -> None:
+    """Rebuild the indexes, surfacing failures as a 502.
+
+    When ``corpus_datasets`` is given, re-index from those datasets (updating the
+    corpus the pipeline is built from); otherwise rebuild from the current corpus.
+    """
     try:
-        await pipeline.rebuild()
+        if corpus_datasets is not None:
+            await pipeline.build(corpus_datasets)
+        else:
+            await pipeline.rebuild()
     except Exception as e:
         logger.exception("RAG rebuild failed")
         raise HTTPException(
@@ -65,7 +74,8 @@ async def get_rag_config(rag_pipeline: rag_pipeline_dependency):
         "Partially override the RAG config. Retrieval knobs apply to the next "
         "query immediately. The indexes are rebuilt after applying the changes "
         "by default (so build-time fields take effect); pass `rebuild=false` to "
-        "skip the rebuild."
+        "skip the rebuild. Pass `corpus_datasets` to re-index from a different set "
+        "of Langfuse corpus datasets (always rebuilds)."
     ),
     responses=ADMIN_RAG_RESPONSES,
 )
@@ -74,16 +84,25 @@ async def update_rag_config(
 ):
     pipeline = _require_pipeline(rag_pipeline)
     overrides = update.model_dump(
-        exclude_unset=True, exclude_none=True, exclude={"rebuild"}
+        exclude_unset=True, exclude_none=True, exclude={"rebuild", "corpus_datasets"}
     )
 
     pipeline.apply_overrides(overrides)
-    if update.rebuild:
+
+    rebuilt = update.rebuild
+    if update.corpus_datasets is not None:
+        if not update.corpus_datasets:
+            raise HTTPException(
+                status_code=400,
+                detail="corpus_datasets must contain at least one dataset name.",
+            )
+        # A corpus change only takes effect once re-indexed, so always rebuild.
+        await _rebuild(pipeline, corpus_datasets=update.corpus_datasets)
+        rebuilt = True
+    elif update.rebuild:
         await _rebuild(pipeline)
 
-    return RAGConfigUpdateResponse(
-        config=_snapshot_response(pipeline), rebuilt=update.rebuild
-    )
+    return RAGConfigUpdateResponse(config=_snapshot_response(pipeline), rebuilt=rebuilt)
 
 
 @router.post(

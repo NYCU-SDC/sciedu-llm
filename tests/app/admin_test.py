@@ -23,6 +23,7 @@ class _FakeRAGPipeline:
         self.is_built = True
         self.corpus_dataset_names = ["biology"]
         self.rebuild_calls: list = []
+        self.build_calls: list = []
         self.retrieve_calls: list = []
 
     def config_snapshot(self) -> dict:
@@ -33,6 +34,11 @@ class _FakeRAGPipeline:
 
     async def rebuild(self) -> None:
         self.rebuild_calls.append(True)
+
+    async def build(self, corpus_dataset_names, **kwargs) -> None:
+        self.build_calls.append(list(corpus_dataset_names))
+        self.corpus_dataset_names = list(corpus_dataset_names)
+        self.is_built = True
 
     async def retrieve(self, *, query: str, **kwargs):
         self.retrieve_calls.append((query, kwargs))
@@ -92,6 +98,35 @@ def test_patch_rebuild_false_applies_without_rebuild(client, override_rag):
     assert body["rebuilt"] is False
     assert body["config"]["chunk_size"] == 400
     assert pipeline.rebuild_calls == []
+
+
+def test_patch_corpus_datasets_reindexes_and_forces_rebuild(client, override_rag):
+    pipeline = _FakeRAGPipeline()
+    override_rag(pipeline)
+
+    # rebuild=False is ignored for a corpus change — it must re-index to take effect.
+    response = client.patch(
+        "/admin/rag/config",
+        json={"corpus_datasets": ["chemistry", "physics"], "rebuild": False},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["rebuilt"] is True
+    assert body["config"]["corpus_datasets"] == ["chemistry", "physics"]
+    assert pipeline.build_calls == [["chemistry", "physics"]]
+    # build() re-indexes from the new corpus; rebuild() (old corpus) is not called.
+    assert pipeline.rebuild_calls == []
+
+
+def test_patch_empty_corpus_datasets_returns_400(client, override_rag):
+    pipeline = _FakeRAGPipeline()
+    override_rag(pipeline)
+
+    response = client.patch("/admin/rag/config", json={"corpus_datasets": []})
+
+    assert response.status_code == 400
+    assert pipeline.build_calls == []
 
 
 def test_patch_rejects_out_of_range_value(client, override_rag):

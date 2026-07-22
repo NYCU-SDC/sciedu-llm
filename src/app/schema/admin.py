@@ -48,6 +48,15 @@ class RAGConfigUpdate(BaseModel):
         ),
     )
 
+    corpus_datasets: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Override which Langfuse corpus datasets the indexes are built from. "
+            "When provided (non-empty), the indexes are always rebuilt from the new "
+            "corpus regardless of the `rebuild` flag, so the change takes effect."
+        ),
+    )
+
     embedding_model: Optional[str] = None
     rerank_model: Optional[str] = None
     embedding_batch_size: Optional[int] = Field(default=None, gt=0)
