@@ -44,7 +44,7 @@ export function ErrorPanel({
         <div className="alarm-actions">
           {actions}
           {copyText && (
-            <CopyButton text={copyText} className="btn btn-secondary" label="Copy error" />
+            <CopyButton text={copyText} className="btn btn-secondary" label="複製錯誤" />
           )}
         </div>
       )}
@@ -68,7 +68,7 @@ export function QueryError({
   const status = error instanceof ApiError ? error.status : null
   return (
     <ErrorPanel
-      title={status ? `${what} — the service answered ${status}` : what}
+      title={status ? `${what} — 服務回應 ${status}` : what}
       detail={message}
       copyText={status ? `${status} — ${message}` : message}
       actions={actions}

@@ -166,6 +166,7 @@ a:hover {
 .status {
     display: flex;
     align-items: center;
+    margin-left: auto;
     gap: 8px;
     flex: none;
     padding: 6px 0;

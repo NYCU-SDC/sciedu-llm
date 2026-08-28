@@ -58,7 +58,7 @@ export function ImportPresetsDialog({ onClose }: { onClose: () => void }) {
         )
         setResults((previous) => ({
           ...previous,
-          [entry.key]: { ok: true, message: 'saved' },
+          [entry.key]: { ok: true, message: '已儲存' },
         }))
       } catch (failure) {
         setResults((previous) => ({
@@ -82,13 +82,13 @@ export function ImportPresetsDialog({ onClose }: { onClose: () => void }) {
         className="dialog dialog-wide"
         role="dialog"
         aria-modal="true"
-        aria-label="Import presets"
+        aria-label="匯入預設值"
       >
-        <div className="dialog-title">Import presets</div>
+        <div className="dialog-title">匯入預設值</div>
         <p className="note">
-          Paste one preset document, or an array of them. Each is written with{' '}
+          貼上一份預設值文件，或一個包含多份文件的陣列。每份文件都會透過{' '}
           <span className="mono">PUT /admin/presets/{'{name}'}</span> under its own{' '}
-          <span className="mono">name</span>, replacing any preset already stored there.
+          <span className="mono">name</span> 寫入，並取代該名稱已儲存的預設值。
         </p>
 
         <textarea
@@ -120,7 +120,7 @@ export function ImportPresetsDialog({ onClose }: { onClose: () => void }) {
 
         <div className="dialog-actions">
           <button type="button" className="btn btn-secondary" disabled={busy} onClick={onClose}>
-            {done && !busy ? 'Close' : 'Cancel'}
+            {done && !busy ? '關閉' : '取消'}
           </button>
           <button
             type="button"
@@ -129,10 +129,10 @@ export function ImportPresetsDialog({ onClose }: { onClose: () => void }) {
             onClick={() => void run()}
           >
             {busy
-              ? 'Importing…'
+              ? '匯入中…'
               : valid.length === 0
-                ? 'Import'
-                : `Import ${valid.length === 1 ? 'this preset' : `these ${valid.length} presets`}`}
+                ? '匯入'
+                : `匯入${valid.length === 1 ? '此預設值' : `這 ${valid.length} 個預設值`}`}
           </button>
         </div>
       </div>
@@ -150,12 +150,12 @@ function DocumentRow({ entry, outcome }: { entry: Parsed; outcome: Outcome | und
         </span>
         <span className={`tag ${state === 'saved' ? 'tag-accent-2' : state === 'ready' ? 'tag-neutral' : 'tag-outline'}`}>
           {state === 'saved'
-            ? 'saved'
+            ? '已儲存'
             : state === 'rejected'
-              ? 'rejected'
+              ? '已拒絕'
               : state === 'ready'
-                ? 'ready'
-                : 'not the right shape'}
+                ? '可匯入'
+                : '格式不正確'}
         </span>
       </div>
       {entry.problems.map((problem) => (
@@ -183,12 +183,12 @@ function parseDocuments(text: string): { error: string | null; documents: Parsed
   try {
     value = JSON.parse(trimmed)
   } catch (failure) {
-    return { error: `That is not valid JSON — ${errorMessage(failure)}`, documents: [] }
+    return { error: `這不是有效的 JSON — ${errorMessage(failure)}`, documents: [] }
   }
 
   const list = Array.isArray(value) ? value : [value]
   if (list.length === 0) {
-    return { error: 'That array is empty, so there is nothing to import.', documents: [] }
+    return { error: '陣列為空，沒有可匯入的內容。', documents: [] }
   }
 
   return {
@@ -202,7 +202,7 @@ function parseDocuments(text: string): { error: string | null; documents: Parsed
       const name = typeof record.name === 'string' ? record.name : ''
       return {
         key: String(index),
-        title: name || `document ${index + 1}`,
+        title: name || `文件 ${index + 1}`,
         preset: problems.length === 0 ? normalisePreset(record) : null,
         problems,
       }

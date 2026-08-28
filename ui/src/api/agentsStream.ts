@@ -178,7 +178,7 @@ export function parseAgentEvent(value: unknown): AgentEvent | null {
     case 'error':
       return {
         type: 'error',
-        error: asString(raw.error) ?? 'The run failed.',
+        error: asString(raw.error) ?? '執行失敗。',
         code: asString(raw.code) ?? 'unknown',
       }
     default:
@@ -270,7 +270,7 @@ export async function streamAgents(
   } catch (error) {
     if (signal.aborted) throw error
     throw new NetworkError(
-      `Could not reach the service at ${BASE || window.location.origin}/agents. ` +
+      `無法連線至 ${BASE || window.location.origin}/agents 的服務。` +
         `${error instanceof Error ? error.message : String(error)}`,
     )
   }
@@ -298,7 +298,7 @@ export async function streamAgents(
   }
 
   if (!response.body) {
-    throw new NetworkError('This browser gave no readable body for the /agents stream.')
+    throw new NetworkError('此瀏覽器未提供可讀取的 /agents 串流內容。')
   }
 
   const reader = response.body.getReader()
@@ -326,7 +326,7 @@ export async function streamAgents(
   } catch (error) {
     if (signal.aborted) throw error
     throw new NetworkError(
-      `The /agents stream ended early. ${error instanceof Error ? error.message : String(error)}`,
+      `/agents 串流提前結束。${error instanceof Error ? error.message : String(error)}`,
     )
   } finally {
     // Aborting the fetch already cancels the body; this covers the ordinary

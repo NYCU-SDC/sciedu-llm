@@ -7,12 +7,12 @@ import { useHealth } from "../api/hooks";
 /** Exactly five destinations. The preset editor and the run detail are
  * sub-screens of their list, reached by opening a row — not nav entries. */
 const NAV = [
-    { to: "/rag", label: "Retrieval settings" },
-    { to: "/presets", label: "Behaviour presets" },
-    { to: "/evals", label: "Evaluations" },
+    { to: "/rag", label: "檢索設定" },
+    { to: "/presets", label: "行為預設" },
+    { to: "/evals", label: "評估" },
     // Not part of docs/admin-ui-spec.md: a manual tester for POST /agents.
-    { to: "/playground", label: "Playground" },
-    { to: "/reference", label: "What's available" },
+    { to: "/playground", label: "測試區" },
+    { to: "/reference", label: "可用資源" },
 ];
 
 export function AppShell() {
@@ -22,7 +22,7 @@ export function AppShell() {
                 <div className="topbar-inner">
                     <NavLink to="/rag" className="brand">
                         <span className="brand-dot" />
-                        <span className="brand-name">sciedu-llm</span>
+                        <span className="brand-name">SciLLM Console</span>
                     </NavLink>
 
                     <nav className="topnav">
@@ -67,10 +67,10 @@ function BackendStatus() {
             />
             <span title={health.error ? errorMessage(health.error) : undefined}>
                 {waiting
-                    ? "checking the backend"
+                    ? "正在檢查後端"
                     : up
-                      ? "backend connected"
-                      : "backend unreachable"}
+                      ? "後端已連線"
+                      : "無法連線至後端"}
             </span>
             {LANGFUSE_URL && (
                 <>
@@ -78,7 +78,7 @@ function BackendStatus() {
                         ·
                     </span>
                     <a href={LANGFUSE_URL} target="_blank" rel="noreferrer">
-                        traces in Langfuse
+                        在 Langfuse 查看追蹤紀錄
                     </a>
                 </>
             )}

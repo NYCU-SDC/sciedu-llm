@@ -10,35 +10,34 @@ import { FolderDatasetPicker, type DatasetItem } from '../../components/FolderDa
 import { Field, Panel } from '../../components/Panel'
 import { Loading, PageHeader } from '../../components/States'
 import { RebuildTag } from '../../components/StatusTag'
-import { pluralise } from '../../lib/format'
 import { buildUpdate, diffDraft, toDraft, type NumericKey, type RagDraft } from './draft'
 
 /** The plain-language notes the mockup puts beside each retrieval knob. */
 const KNOBS: { key: NumericKey; label: string; note: string }[] = [
   {
     key: 'bm25_top_n',
-    label: 'Keyword top-n',
-    note: 'Passages kept from the exact-wording search (BM25).',
+    label: '關鍵字前 n 筆',
+    note: '從精確措辭搜尋（BM25）保留的段落。',
   },
   {
     key: 'dense_top_n',
-    label: 'Meaning top-n',
-    note: 'Passages kept from the similar-meaning search.',
+    label: '語意前 n 筆',
+    note: '從語意相近搜尋保留的段落。',
   },
   {
     key: 'rrf_k',
-    label: 'Merge constant (RRF k)',
-    note: 'How gently the two lists are blended. Higher is gentler.',
+    label: '合併常數（RRF k）',
+    note: '兩份結果清單的混合強度；數值越高越平緩。',
   },
   {
     key: 'rerank_pool_size',
-    label: 'Rerank pool',
-    note: 'How many of the merged passages get re-read and re-ordered.',
+    label: '重排序候選集',
+    note: '合併後會再次閱讀與重新排序的段落數量。',
   },
   {
     key: 'final_k',
-    label: 'Final k',
-    note: 'How many passages the assistant actually reads before answering.',
+    label: '最終 k',
+    note: '助理回答前實際閱讀的段落數量。',
   },
 ]
 
@@ -97,17 +96,17 @@ export function RagScreen() {
         <div style={{ marginTop: 20 }}>
           {notEnabled ? (
             <ErrorPanel
-              title="Retrieval is switched off on this service"
+              title="此服務未啟用檢索功能"
               detail={errorMessage(config.error)}
             >
               <p className="alarm-body" style={{ marginTop: 10 }}>
-                Set <span className="mono">RAG_CORPUS_DATASETS</span> in the service's
-                environment and restart it; there is nothing to configure until then.
+                請在服務環境中設定 <span className="mono">RAG_CORPUS_DATASETS</span> 後重新啟動；
+                在此之前沒有可設定的項目。
               </p>
             </ErrorPanel>
           ) : (
             <QueryError
-              what="Could not read the retrieval configuration"
+              what="無法讀取檢索設定"
               error={config.error}
               actions={
                 <button
@@ -115,7 +114,7 @@ export function RagScreen() {
                   className="btn btn-primary"
                   onClick={() => void config.refetch()}
                 >
-                  Try again
+                  再試一次
                 </button>
               }
             />
@@ -131,7 +130,7 @@ export function RagScreen() {
     return (
       <>
         <Header disabled onReset={() => undefined} onRebuild={() => undefined} />
-        <Loading what="the live retrieval configuration" />
+        <Loading what="目前的檢索設定" />
       </>
     )
   }
@@ -154,12 +153,12 @@ export function RagScreen() {
         pending={
           apply.isPending
             ? rebuildsOnApply
-              ? 'Applying your changes, then rebuilding the index'
-              : 'Applying your changes'
+              ? '正在套用變更，接著重建索引'
+              : '正在套用變更'
             : rebuild.isPending
-              ? 'Rebuilding the index'
+              ? '正在重建索引'
               : reset.isPending
-                ? 'Restoring the server defaults, then rebuilding the index'
+                ? '正在還原伺服器預設值，接著重建索引'
                 : null
         }
         failure={
@@ -172,14 +171,13 @@ export function RagScreen() {
 
       <div className="split split-wide" style={{ marginTop: 22 }}>
         <div className="col">
-          <Panel title="Course material">
+          <Panel title="課程教材">
             <p className="note" style={{ marginBottom: 14 }}>
-              Which Langfuse datasets under <span className="mono">corpus/</span> the
-              assistant may quote from.
+              助理可引用 <span className="mono">corpus/</span> 下哪些 Langfuse 資料集。
             </p>
             {datasets.isError ? (
               <QueryError
-                what="Could not list the Langfuse datasets"
+                what="無法列出 Langfuse 資料集"
                 error={datasets.error}
                 actions={
                   <button
@@ -187,18 +185,18 @@ export function RagScreen() {
                     className="btn btn-secondary"
                     onClick={() => void datasets.refetch()}
                   >
-                    Try again
+                    再試一次
                   </button>
                 }
               />
             ) : !datasets.data ? (
-              <Loading what="the dataset list" />
+              <Loading what="資料集清單" />
             ) : (
               <FolderDatasetPicker
                 items={corpusItems}
                 selected={current.corpus_datasets}
                 disabled={busy}
-                empty="Langfuse has no datasets under the corpus folder yet."
+                empty="Langfuse 的 corpus 資料夾目前沒有資料集。"
                 onChange={(next) => set('corpus_datasets', next)}
               />
             )}
@@ -218,23 +216,23 @@ export function RagScreen() {
             >
               <RebuildTag />
               <span style={{ fontSize: 12, color: 'var(--color-neutral-600)' }}>
-                Read from Langfuse ·{' '}
+                讀取自 Langfuse ·{' '}
                 <button
                   type="button"
                   className="link-btn"
                   onClick={() => void datasets.refetch()}
                 >
-                  refresh the list
+                  重新整理清單
                 </button>
               </span>
             </div>
           </Panel>
 
-          <Panel title="Models">
+          <Panel title="模型">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div className="grid-2" style={{ alignItems: 'start' }}>
                 <div>
-                  <Field label="Embedding model">
+                  <Field label="嵌入模型">
                     {(id) => (
                       <ModelPicker
                         id={id}
@@ -246,16 +244,15 @@ export function RagScreen() {
                     )}
                   </Field>
                   <div style={{ marginTop: 7 }}>
-                    <RebuildTag>rebuilds the index</RebuildTag>
+                    <RebuildTag>會重建索引</RebuildTag>
                   </div>
                 </div>
                 <p className="note" style={{ paddingTop: 19 }}>
-                  Turns your documents into numbers so passages with similar meaning can be
-                  found. Changing it means every document has to be re-read.
+                  將文件轉為數字表示，以找出語意相近的段落。變更後必須重新讀取所有文件。
                 </p>
               </div>
               <div className="grid-2" style={{ alignItems: 'start' }}>
-                <Field label="Rerank model">
+                <Field label="重排序模型">
                   {(id) => (
                     <ModelPicker
                       id={id}
@@ -267,34 +264,31 @@ export function RagScreen() {
                   )}
                 </Field>
                 <p className="note" style={{ paddingTop: 19 }}>
-                  A second pass that re-orders the candidate passages by how well they
-                  answer the question. Safe to change at any time.
+                  第二道處理會依段落回答問題的程度重新排序候選段落，可隨時變更。
                 </p>
               </div>
             </div>
             {models.isError && (
               <p className="note" style={{ marginTop: 12 }}>
-                The model list is unavailable ({errorMessage(models.error)}), so these are
-                free-text fields for now.
+                模型清單無法取得（{errorMessage(models.error)}），目前改為自由輸入欄位。
               </p>
             )}
           </Panel>
 
-          <Panel title="How documents are cut up">
+          <Panel title="文件切分方式">
             <p className="note" style={{ marginBottom: 14 }}>
-              Long documents are split into overlapping pieces. Smaller pieces are more
-              precise; larger pieces keep more context around each fact.
+              長文件會切成彼此重疊的片段。較小的片段更精確；較大的片段會保留更多上下文。
             </p>
             <div className="grid-2">
               <NumberField
-                label="Chunk size (characters)"
+                label="片段大小（字元）"
                 value={current.chunk_size}
                 problem={problemFor('chunk_size')}
                 disabled={busy}
                 onChange={(value) => set('chunk_size', value)}
               />
               <NumberField
-                label="Chunk overlap (characters)"
+                label="片段重疊（字元）"
                 value={current.chunk_overlap}
                 problem={problemFor('chunk_overlap')}
                 disabled={busy}
@@ -302,14 +296,13 @@ export function RagScreen() {
               />
             </div>
             <div style={{ marginTop: 12 }}>
-              <RebuildTag>changing these rebuilds the index</RebuildTag>
+              <RebuildTag>變更這些設定會重建索引</RebuildTag>
             </div>
           </Panel>
 
-          <Panel title="How passages are found">
+          <Panel title="段落搜尋方式">
             <p className="note" style={{ marginBottom: 14 }}>
-              Two searches run side by side — keyword and meaning — and their results are
-              merged, trimmed and re-ordered before the assistant sees them.
+              關鍵字與語意搜尋會並行執行，再將結果合併、篩選與重新排序後交給助理。
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {KNOBS.map((knob) => (
@@ -337,17 +330,17 @@ export function RagScreen() {
           </Panel>
 
           <div className="grid-2" style={{ gap: 14 }}>
-            <Panel title="Answer prompts">
+            <Panel title="回答提示詞">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <TextField
-                  label="System prompt (Langfuse)"
+                  label="系統提示詞（Langfuse）"
                   value={current.generator_system_prompt_name}
                   problem={problemFor('generator_system_prompt_name')}
                   disabled={busy}
                   onChange={(value) => set('generator_system_prompt_name', value)}
                 />
                 <TextField
-                  label="User prompt (Langfuse)"
+                  label="使用者提示詞（Langfuse）"
                   value={current.generator_user_prompt_name}
                   problem={problemFor('generator_user_prompt_name')}
                   disabled={busy}
@@ -355,20 +348,20 @@ export function RagScreen() {
                 />
               </div>
               <p className="note" style={{ marginTop: 12 }}>
-                The wording lives in Langfuse; this only says which prompt to fetch.
+                提示詞內容儲存在 Langfuse；這裡只指定要取得哪個提示詞。
               </p>
             </Panel>
-            <Panel title="Throughput">
+            <Panel title="處理量">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <NumberField
-                  label="Embedding batch size"
+                  label="嵌入批次大小"
                   value={current.embedding_batch_size}
                   problem={problemFor('embedding_batch_size')}
                   disabled={busy}
                   onChange={(value) => set('embedding_batch_size', value)}
                 />
                 <NumberField
-                  label="Max concurrency"
+                  label="最大並行數"
                   value={current.max_concurrency}
                   problem={problemFor('max_concurrency')}
                   disabled={busy}
@@ -376,8 +369,7 @@ export function RagScreen() {
                 />
               </div>
               <p className="note" style={{ marginTop: 12 }}>
-                How hard a rebuild pushes the model server. Lower these if rebuilds fail
-                with rate-limit errors.
+                此設定決定重建時對模型伺服器的負載。若因速率限制而失敗，請調低數值。
               </p>
             </Panel>
           </div>
@@ -398,13 +390,13 @@ export function RagScreen() {
               disabled={busy || changes.length === 0 || (built?.problems.length ?? 0) > 0}
               onClick={onApply}
             >
-              {apply.isPending ? 'Applying…' : 'Apply to the running service'}
+              {apply.isPending ? '套用中…' : '套用至執行中的服務'}
             </button>
             {changes.length > 0 && (
               <p className="note" style={{ maxWidth: '46ch' }}>
                 {rebuildsOnApply
-                  ? `${rebuildCount === 1 ? 'One of your changes needs' : `${rebuildCount} of your changes need`} the index rebuilt, which takes a while.`
-                  : 'None of your changes need the index rebuilt.'}
+                  ? `${rebuildCount === 1 ? '有一項變更需要' : `有 ${rebuildCount} 項變更需要`}重建索引，可能需要一些時間。`
+                  : '目前的變更不需要重建索引。'}
               </p>
             )}
           </div>
@@ -412,12 +404,12 @@ export function RagScreen() {
 
         <aside className="panel sticky-aside">
           <h5 className="sect" style={{ margin: 0 }}>
-            Unsaved changes
+            未儲存的變更
           </h5>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
             {changes.length === 0 ? (
               <p className="note">
-                Nothing edited yet. What you see is exactly what the service is using.
+                尚未編輯任何設定。畫面顯示的就是服務目前使用的設定。
               </p>
             ) : (
               <>
@@ -440,12 +432,12 @@ export function RagScreen() {
                     </div>
                     {change.rebuilds && (
                       <div style={{ marginTop: 6 }}>
-                        <RebuildTag>rebuilds the index</RebuildTag>
+                        <RebuildTag>會重建索引</RebuildTag>
                       </div>
                     )}
                   </div>
                 ))}
-                <p className="note">Nothing is sent to the service until you press Apply.</p>
+                <p className="note">按下「套用」前，不會將任何內容傳送至服務。</p>
                 <button
                   type="button"
                   className="btn btn-ghost"
@@ -453,7 +445,7 @@ export function RagScreen() {
                   disabled={busy}
                   onClick={() => setDraft(null)}
                 >
-                  Discard changes
+                  捨棄變更
                 </button>
               </>
             )}
@@ -463,15 +455,14 @@ export function RagScreen() {
 
       {confirmReset && (
         <ConfirmDialog
-          title="Reset to the server's defaults?"
+          title="要還原為伺服器預設值嗎？"
           body={
             <>
-              Every override this process is holding is dropped and the values from the
-              service's <span className="mono">RAG_*</span> environment variables come back.
-              The index is rebuilt straight afterwards, which can take several minutes.
+              此程序持有的所有覆寫設定都會移除，並還原服務
+              <span className="mono">RAG_*</span> 環境變數的值。之後會立即重建索引，可能需要數分鐘。
             </>
           }
-          confirmLabel="Reset and rebuild"
+          confirmLabel="還原並重建"
           busy={reset.isPending}
           onCancel={() => setConfirmReset(false)}
           onConfirm={() => {
@@ -495,9 +486,9 @@ function Header({
 }) {
   return (
     <PageHeader
-      kicker="Live service"
-      title="Retrieval settings"
-      lede="How the assistant looks things up in your course material before it answers. Every setting below is in use right now."
+      kicker="即時服務"
+      title="檢索設定"
+      lede="助理回答前如何在課程教材中查找資訊。以下每項設定目前都正在使用。"
       actions={
         <>
           <button
@@ -506,7 +497,7 @@ function Header({
             disabled={disabled}
             onClick={onReset}
           >
-            Reset to server defaults
+            還原伺服器預設值
           </button>
           <button
             type="button"
@@ -514,7 +505,7 @@ function Header({
             disabled={disabled}
             onClick={onRebuild}
           >
-            Rebuild index
+            重建索引
           </button>
         </>
       }
@@ -545,11 +536,10 @@ function StatusBanner({
         <span className="banner-led" />
         <div className="banner-body">
           <div className="banner-title">
-            {pending} — the assistant keeps using the previous index meanwhile
+            {pending} — 在此期間助理會持續使用先前的索引
           </div>
           <div className="banner-line">
-            This is one long request and the service reports no progress while it runs.
-            Leave the tab open; it finishes when it finishes.
+            這是一個耗時的請求，服務執行期間不會回報進度。請保持此分頁開啟，完成後即會結束。
           </div>
         </div>
       </div>
@@ -560,12 +550,12 @@ function StatusBanner({
     return (
       <div style={{ marginTop: 20 }}>
         <ErrorPanel
-          title="The last attempt failed — the previous index is still serving"
+          title="上次嘗試失敗，但仍在使用先前的索引"
           detail={failure}
           copyText={failure}
           actions={
             <button type="button" className="btn btn-primary" onClick={onRetry}>
-              Rebuild again
+              再次重建
             </button>
           }
         />
@@ -578,13 +568,13 @@ function StatusBanner({
       <div className="banner banner-idle" style={{ marginTop: 20 }}>
         <span className="banner-led" />
         <div className="banner-body">
-          <div className="banner-title">No index is built yet</div>
+          <div className="banner-title">尚未建立索引</div>
           <div className="banner-line">
-            Retrieval cannot answer until the corpus has been indexed. Press{' '}
-            <strong>Rebuild index</strong> when the settings below look right.
+            語料庫建立索引前無法進行檢索回答。確認下方設定無誤後，請按{' '}
+            <strong>重建索引</strong>。
           </div>
         </div>
-        <span className="tag tag-neutral">not built</span>
+        <span className="tag tag-neutral">未建立</span>
       </div>
     )
   }
@@ -593,12 +583,12 @@ function StatusBanner({
     <div className="banner banner-good" style={{ marginTop: 20 }}>
       <span className="banner-led" />
       <div className="banner-body">
-        <div className="banner-title">Index is built and answering</div>
+        <div className="banner-title">索引已建立並可供回答</div>
         <div className="banner-line mono">
-          {pluralise(datasetCount, 'corpus dataset')} indexed
+          已建立 {datasetCount} 個語料庫資料集的索引
         </div>
       </div>
-      <span className="tag tag-accent-2">healthy</span>
+      <span className="tag tag-accent-2">正常</span>
     </div>
   )
 }
@@ -613,7 +603,7 @@ function buildCorpusItems(available: NamedResource[], active: string[]): Dataset
     ...available.map((entry) => ({ name: entry.name, label: entry.label })),
     ...extras.map((name) => ({
       name,
-      note: 'In use, but Langfuse no longer lists it under the corpus folder.',
+      note: '正在使用，但 Langfuse 已不再於 corpus 資料夾下列出此項目。',
     })),
   ]
 }

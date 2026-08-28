@@ -16,7 +16,7 @@ export function CheckList({
   onToggle,
   disabled,
   boxed,
-  empty = 'Nothing to choose from.',
+  empty = '沒有可選項目。',
 }: {
   choices: Choice[]
   selected: string[]

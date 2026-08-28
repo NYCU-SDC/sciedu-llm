@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 /** Loading says so in one quiet line. The design system prefers calm, so there
  * are no spinners anywhere in this console. */
 export function Loading({ what }: { what: string }) {
-  return <p className="quiet">Loading {what}…</p>
+  return <p className="quiet">正在載入{what}…</p>
 }
 
 export function Empty({ children }: { children: ReactNode }) {

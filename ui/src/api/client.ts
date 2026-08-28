@@ -71,11 +71,11 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     if (signal?.aborted) throw error
     if (controller.signal.aborted) {
       throw new NetworkError(
-        `The service did not answer within ${Math.round(timeoutMs / 1000)}s (${method} ${path}).`,
+        `服務在 ${Math.round(timeoutMs / 1000)} 秒內未回應（${method} ${path}）。`,
       )
     }
     throw new NetworkError(
-      `Could not reach the service at ${BASE || window.location.origin}${path}. ` +
+      `無法連線至 ${BASE || window.location.origin}${path} 的服務。` +
         `${error instanceof Error ? error.message : String(error)}`,
     )
   } finally {

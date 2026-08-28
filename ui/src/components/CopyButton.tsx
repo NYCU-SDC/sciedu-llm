@@ -6,7 +6,7 @@ import { Check, Copy } from 'lucide-react'
  * origins, which is how this console is often reached in a lab). */
 export function CopyButton({
   text,
-  label = 'Copy',
+  label = '複製',
   className = 'btn btn-secondary',
 }: {
   text: string
@@ -47,7 +47,7 @@ export function CopyButton({
       ) : (
         <Copy size={14} strokeWidth={2.75} aria-hidden />
       )}
-      {copied ? 'Copied' : label}
+      {copied ? '已複製' : label}
     </button>
   )
 }

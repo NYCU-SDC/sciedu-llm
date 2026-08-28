@@ -28,19 +28,19 @@ import {
 } from './presetShape'
 
 const TOOL_CHOICES: { value: ToolChoice; label: string }[] = [
-  { value: 'auto', label: 'auto — the model decides' },
-  { value: 'required', label: 'required — must use a tool first' },
-  { value: 'none', label: 'none — no tools' },
+  { value: 'auto', label: 'auto — 由模型決定' },
+  { value: 'required', label: 'required — 必須先使用工具' },
+  { value: 'none', label: 'none — 不使用工具' },
 ]
 
 const COURSE_MATERIAL: { value: CourseMaterialMode; label: React.ReactNode }[] = [
-  { value: 'never', label: 'Never search — the model answers from its own knowledge' },
-  { value: 'always', label: 'Always search before answering' },
+  { value: 'never', label: '不搜尋 — 模型依自身知識回答' },
+  { value: 'always', label: '回答前一律搜尋' },
   {
     value: 'decide',
     label: (
       <>
-        Let the model decide, using the <span className="mono">{RAG_SEARCH}</span> tool
+        由模型決定，使用 <span className="mono">{RAG_SEARCH}</span> 工具
       </>
     ),
   },
@@ -83,7 +83,7 @@ export function PresetEditorScreen() {
     const document = preset
     if (!document) return
     if (!document.name) {
-      setLocalProblems([{ path: 'name', message: 'A preset needs a name before it can be saved.' }])
+      setLocalProblems([{ path: 'name', message: '預設值必須有名稱才能儲存。' }])
       return
     }
     save.mutate(
@@ -101,9 +101,9 @@ export function PresetEditorScreen() {
   if (!isNew && loaded.isError) {
     return (
       <>
-        <PageHeader title={name ?? 'Preset'} back={<BackLink />} mono />
+        <PageHeader title={name ?? '預設值'} back={<BackLink />} mono />
         <div style={{ marginTop: 20 }}>
-          <QueryError what={`Could not open the preset '${name}'`} error={loaded.error} />
+          <QueryError what={`無法開啟預設值「${name}」`} error={loaded.error} />
         </div>
       </>
     )
@@ -112,8 +112,8 @@ export function PresetEditorScreen() {
   if (!preset) {
     return (
       <>
-        <PageHeader title={name ?? 'Preset'} back={<BackLink />} mono />
-        <Loading what="the preset" />
+        <PageHeader title={name ?? '預設值'} back={<BackLink />} mono />
+        <Loading what="預設值" />
       </>
     )
   }
@@ -166,7 +166,7 @@ export function PresetEditorScreen() {
     <>
       <PageHeader
         back={<BackLink />}
-        title={preset.name || (isNew ? 'New preset' : (name ?? ''))}
+        title={preset.name || (isNew ? '新增預設值' : (name ?? ''))}
         mono
         lede={<StoredIn isNew={isNew} detail={detail} />}
         actions={
@@ -176,7 +176,7 @@ export function PresetEditorScreen() {
             onClick={onSave}
             disabled={save.isPending}
           >
-            {save.isPending ? 'Saving…' : 'Save & reload registry'}
+            {save.isPending ? '儲存中…' : '儲存並重新載入登錄表'}
           </button>
         }
       />
@@ -209,16 +209,16 @@ export function PresetEditorScreen() {
 
       {remove.error && (
         <div style={{ marginTop: 14 }}>
-          <QueryError what="Could not delete this preset" error={remove.error} />
+          <QueryError what="無法刪除此預設值" error={remove.error} />
         </div>
       )}
 
       <div className="split split-narrow" style={{ marginTop: 14 }}>
         <div className="col">
-          <Panel title="Basics">
+          <Panel title="基本資料">
             <div className="grid-2">
               <Field
-                label="Preset name"
+                label="預設值名稱"
                 hint={
                   renamed
                     ? `Saving under a new name creates a second preset; '${detail?.name}' stays as it is.`
@@ -234,7 +234,7 @@ export function PresetEditorScreen() {
                   />
                 )}
               </Field>
-              <Field label="Model" hint="The service's own default is used when this is left unset.">
+              <Field label="模型" hint="未設定時使用服務本身的預設值。">
                 {(id) => (
                   <select
                     id={id}
@@ -244,7 +244,7 @@ export function PresetEditorScreen() {
                       update({ model: event.target.value === '' ? null : event.target.value })
                     }
                   >
-                    <option value="">— the server's default model —</option>
+                    <option value="">— 伺服器預設模型 —</option>
                     {modelOptions(allowed, preset.model).map((option) => (
                       <option key={option} value={option}>
                         {option}
@@ -254,7 +254,7 @@ export function PresetEditorScreen() {
                 )}
               </Field>
             </div>
-            <Field label="What this preset is for" style={{ marginTop: 14 }}>
+            <Field label="此預設值的用途" style={{ marginTop: 14 }}>
               {(id) => (
                 <input
                   id={id}
@@ -266,7 +266,7 @@ export function PresetEditorScreen() {
             </Field>
           </Panel>
 
-          <Panel title="Cast">
+          <Panel title="角色群">
             <p className="note" style={{ marginBottom: 14 }}>
               One assistant answers by default. You can add a second character the first
               one may call in when it needs a different voice.
@@ -299,7 +299,7 @@ export function PresetEditorScreen() {
             </div>
           </Panel>
 
-          <Panel title="Course material">
+          <Panel title="課程教材">
             <RadioList
               name="course-material"
               options={COURSE_MATERIAL}
@@ -308,7 +308,7 @@ export function PresetEditorScreen() {
             />
             {objections.length > 0 && (
               <div style={{ marginTop: 12 }}>
-                <ErrorPanel title="The service will refuse this combination">
+                <ErrorPanel title="服務會拒絕此組合">
                   <div className="alarm-list">
                     {objections.map((objection) => (
                       <div style={{ fontSize: 12.5 }} key={objection}>
@@ -321,10 +321,10 @@ export function PresetEditorScreen() {
             )}
           </Panel>
 
-          <Panel title="Limits">
+          <Panel title="限制">
             <div className="grid-2">
               <Field
-                label="Maximum steps per reply"
+                label="每次回覆的最大步數"
                 hint={`How many times it may use a tool before it must answer. At most ${MAX_STEPS_CAP}.`}
               >
                 {(id) => (
@@ -339,7 +339,7 @@ export function PresetEditorScreen() {
                   />
                 )}
               </Field>
-              <Field label="Tool choice">
+              <Field label="工具選擇">
                 {(id) => (
                   <select
                     id={id}
@@ -376,7 +376,7 @@ export function PresetEditorScreen() {
               onClick={onSave}
               disabled={save.isPending}
             >
-              {save.isPending ? 'Saving…' : 'Save & reload registry'}
+              {save.isPending ? '儲存中…' : '儲存並重新載入登錄表'}
             </button>
             {deletable && (
               <>
@@ -387,7 +387,7 @@ export function PresetEditorScreen() {
                   disabled={remove.isPending}
                 >
                   <Trash2 size={15} strokeWidth={2.75} aria-hidden />
-                  Delete this preset
+                  刪除此預設值
                 </button>
                 {detail?.shadowed_builtin && (
                   <p className="note" style={{ maxWidth: '38ch' }}>
@@ -401,9 +401,9 @@ export function PresetEditorScreen() {
         </div>
 
         <aside className="sticky-side">
-          <Panel title="Tools you can name">
+          <Panel title="可指定的工具">
             {!tools.data ? (
-              <Loading what="the tools" />
+              <Loading what="工具" />
             ) : (
               <div className="kv-list">
                 {(tools.data ?? []).map((tool) => (
@@ -431,11 +431,11 @@ export function PresetEditorScreen() {
             </p>
           </Panel>
 
-          <Panel title="Models on the allowlist">
+          <Panel title="允許清單中的模型">
             {models.isError ? (
-              <p className="note">Unavailable — {errorMessage(models.error)}</p>
+              <p className="note">無法使用 — {errorMessage(models.error)}</p>
             ) : !models.data ? (
-              <Loading what="the models" />
+              <Loading what="模型" />
             ) : allowed.length === 0 ? (
               <p className="note">
                 No allowlist is configured, so any model the upstream server advertises may
@@ -461,9 +461,7 @@ export function PresetEditorScreen() {
               color: 'var(--color-accent-2-800)',
             }}
           >
-            Already have the document written out? <strong>Import presets</strong> on the
-            preset list takes one JSON document or a whole array of them — the service runs
-            the same validation either way.
+            已有寫好的文件嗎？在預設值清單中選擇<strong>匯入預設值</strong>，即可匯入一份 JSON 文件或整個陣列；兩種方式都會執行相同的驗證。
           </div>
         </aside>
       </div>
@@ -485,7 +483,7 @@ export function PresetEditorScreen() {
               </>
             )
           }
-          confirmLabel="Delete it"
+          confirmLabel="刪除"
           busy={remove.isPending}
           onCancel={() => setConfirmDelete(false)}
           onConfirm={() => {
@@ -501,7 +499,7 @@ export function PresetEditorScreen() {
 function BackLink() {
   return (
     <Link to="/presets" style={{ fontSize: 12.5 }}>
-      ← All presets
+      ← 所有預設值
     </Link>
   )
 }
@@ -531,7 +529,7 @@ function StoredIn({ isNew, detail }: { isNew: boolean; detail: PresetDetail | un
       </span>
     )
   }
-  return <span style={{ fontSize: 13 }}>Stored in Langfuse</span>
+  return <span style={{ fontSize: 13 }}>儲存於 Langfuse</span>
 }
 
 function CharacterCard({
@@ -549,7 +547,7 @@ function CharacterCard({
     <div className="cast-card">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span className={isOrchestrator ? 'tag tag-neutral' : 'tag tag-accent'}>
-          {isOrchestrator ? 'orchestrator' : 'summonable'}
+          {isOrchestrator ? '協調角色' : '可召喚'}
         </span>
         <span className="mono" style={{ fontSize: 13, fontWeight: 600 }}>
           {character.id || '(no id)'}
@@ -561,12 +559,12 @@ function CharacterCard({
             style={{ marginLeft: 'auto' }}
             onClick={onRemove}
           >
-            Remove
+            移除
           </button>
         )}
       </div>
       <div className="grid-2" style={{ marginTop: 12 }}>
-        <Field label="Id (used in the document)">
+        <Field label="ID（文件中使用）">
           {(id) => (
             <input
               id={id}
@@ -576,7 +574,7 @@ function CharacterCard({
             />
           )}
         </Field>
-        <Field label="Display name (shown to the student)">
+        <Field label="顯示名稱（學生可見）">
           {(id) => (
             <input
               id={id}
@@ -588,7 +586,7 @@ function CharacterCard({
         </Field>
       </div>
       <div className="grid-2" style={{ marginTop: 12 }}>
-        <Field label="Role">
+        <Field label="角色">
           {(id) => (
             <input
               id={id}
@@ -599,14 +597,14 @@ function CharacterCard({
           )}
         </Field>
         <Field
-          label="Prompt (Langfuse)"
+          label="提示詞（Langfuse）"
           hint={isOrchestrator ? undefined : 'A summoned character needs a prompt of its own.'}
         >
           {(id) => (
             <input
               id={id}
               className="input mono"
-              placeholder={isOrchestrator ? 'optional' : 'required'}
+              placeholder={isOrchestrator ? '選填' : '必填'}
               value={character.prompt_name ?? ''}
               onChange={(event) =>
                 onChange({ prompt_name: event.target.value === '' ? null : event.target.value })
@@ -616,7 +614,7 @@ function CharacterCard({
         </Field>
       </div>
       <div className="grid-2" style={{ marginTop: 12 }}>
-        <Field label="Tools it may call" hint="Comma-separated names from the list on the right.">
+        <Field label="可呼叫的工具" hint="以半形逗號分隔，名稱取自右側清單。">
           {(id) => (
             <input
               id={id}
@@ -627,7 +625,7 @@ function CharacterCard({
           )}
         </Field>
         {!isOrchestrator && (
-          <Field label="Steps when summoned" hint={`At most ${MAX_STEPS_CAP}.`}>
+          <Field label="被召喚時的步數" hint={`最多 ${MAX_STEPS_CAP} 步。`}>
             {(id) => (
               <input
                 id={id}
@@ -658,10 +656,10 @@ function SaveError({ error, preset }: { error: unknown; preset: Preset }) {
       <ErrorPanel
         title={
           status === 502
-            ? 'Langfuse rejected the write'
+            ? 'Langfuse 拒絕寫入'
             : status
-              ? `The service rejected this document — ${status}`
-              : 'The service could not be reached'
+              ? `服務拒絕此文件 — ${status}`
+              : '無法連線至服務'
         }
         detail={errorMessage(error)}
         copyText={errorMessage(error)}
@@ -671,7 +669,7 @@ function SaveError({ error, preset }: { error: unknown; preset: Preset }) {
 
   return (
     <ErrorPanel
-      title={`The service rejected this document — ${problems.length} problem${problems.length === 1 ? '' : 's'}`}
+      title={`服務拒絕此文件 — ${problems.length} 個問題`}
       copyText={problems.map((p) => `${locPath(p.loc)}: ${p.msg}`).join('\n')}
     >
       <div className="alarm-list">

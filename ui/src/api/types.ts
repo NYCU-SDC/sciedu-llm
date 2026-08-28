@@ -228,9 +228,9 @@ export interface ToolInfo {
  * live the day that endpoint lands, and falls back to this constant — which is
  * `_REGISTRY` in `src/app/agents/tools.py`, verbatim — on a 404. */
 export const FALLBACK_TOOLS: ToolInfo[] = [
-  { name: 'rag_search', description: 'Search the course material.' },
+  { name: 'rag_search', description: '搜尋課程教材。' },
   {
     name: 'summon_subagent',
-    description: 'Call the second character in to answer first.',
+    description: '先呼叫另一位角色回答。',
   },
 ]

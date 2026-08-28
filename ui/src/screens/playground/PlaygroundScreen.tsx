@@ -127,7 +127,7 @@ export function PlaygroundScreen() {
             ? {
                 ...turn,
                 failure: {
-                  title: 'The service did not run this turn',
+                  title: '服務未執行此輪對話',
                   detail: errorMessage(error),
                 },
               }
@@ -164,29 +164,29 @@ export function PlaygroundScreen() {
         kicker={
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <FlaskConical size={12} strokeWidth={2.75} aria-hidden />
-            Manual testing
+            手動測試
           </span>
         }
-        title="Playground"
-        lede="Talk to POST /agents the way a client would, and watch the typed part protocol arrive: who is speaking, what they looked up, and what the machinery underneath was doing."
+        title="測試區"
+        lede="如同用戶端般呼叫 POST /agents，並查看帶型別的事件：誰正在說話、查了什麼，以及底層機制做了什麼。"
         actions={
           <button type="button" className="btn btn-secondary" onClick={newSession}>
             <RotateCcw size={14} strokeWidth={2.75} aria-hidden />
-            New session
+            新工作階段
           </button>
         }
       />
 
       <div className="pg-identity">
-        <span className="note">Session</span>
+        <span className="note">工作階段</span>
         <span className="mono pg-session">{sessionId}</span>
-        <CopyButton text={sessionId} label="Copy id" className="btn btn-ghost pg-mini" />
+        <CopyButton text={sessionId} label="複製 ID" className="btn btn-ghost pg-mini" />
         <span className="note">
-          · traced as user <span className="mono">{PLAYGROUND_USER}</span>
+          · 以使用者 <span className="mono">{PLAYGROUND_USER}</span> 追蹤
         </span>
         {sessionUrl && (
           <a href={sessionUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>
-            open this session in Langfuse
+            在 Langfuse 開啟此工作階段
           </a>
         )}
       </div>
@@ -196,8 +196,7 @@ export function PlaygroundScreen() {
           <div className="pg-transcript">
             {turns.length === 0 && (
               <p className="quiet">
-                Nothing sent yet. Pick a preset on the right and ask something — a
-                multi-character preset will introduce its cast before anybody speaks.
+                尚未傳送任何訊息。請在右側選擇預設值並提問；多角色預設值會在發言前介紹角色群。
               </p>
             )}
             {turns.map((turn) =>
@@ -226,16 +225,15 @@ export function PlaygroundScreen() {
         </div>
 
         <aside className="sticky-side">
-          <Panel title="Preset">
+          <Panel title="預設值">
             <Field
-              label="Which behaviour to run"
+              label="要執行的行為"
               hint={
                 preset === ''
-                  ? 'No preset is sent, so AGENTS_DEFAULT_PRESET decides.'
+                  ? '不會傳送預設值，因此由 AGENTS_DEFAULT_PRESET 決定。'
                   : (
                       <>
-                        Sent as <span className="mono">preset</span> on every turn of this
-                        session.
+                        在此工作階段的每一輪都會以 <span className="mono">preset</span> 傳送。
                       </>
                     )
               }
@@ -253,7 +251,7 @@ export function PlaygroundScreen() {
             {presets.isError && (
               <div style={{ marginTop: 12 }}>
                 <QueryError
-                  what="Could not list the presets"
+                  what="無法列出預設值"
                   error={presets.error}
                   actions={
                     <button
@@ -261,7 +259,7 @@ export function PlaygroundScreen() {
                       className="btn btn-secondary"
                       onClick={() => void presets.refetch()}
                     >
-                      Try again
+                      再試一次
                     </button>
                   }
                 />
@@ -269,7 +267,7 @@ export function PlaygroundScreen() {
             )}
           </Panel>
 
-          <Panel title="What the next turn sends">
+          <Panel title="下一輪會傳送的內容">
             <div className="kv-list" style={{ fontSize: 12.5 }}>
               <div>
                 <span className="note" style={{ width: 66 }}>
@@ -292,7 +290,7 @@ export function PlaygroundScreen() {
                   preset
                 </span>
                 <span className="mono" style={{ fontSize: 11.5 }}>
-                  {preset === '' ? '(not sent)' : preset}
+                  {preset === '' ? '（未傳送）' : preset}
                 </span>
               </div>
               <div>
@@ -300,28 +298,24 @@ export function PlaygroundScreen() {
                   messages
                 </span>
                 <span className="mono" style={{ fontSize: 11.5 }}>
-                  {nextMessages.length} + your new one
+                  {nextMessages.length} + 您的新訊息
                 </span>
               </div>
             </div>
             <details style={{ marginTop: 12 }}>
-              <summary>Show the folded conversation</summary>
+              <summary>顯示彙整後的對話</summary>
               <pre className="pg-code" style={{ marginTop: 8 }}>
                 {JSON.stringify(nextMessages, null, 2)}
               </pre>
             </details>
             <p className="note" style={{ marginTop: 10 }}>
-              /agents remembers nothing between turns, so each request carries the whole
-              conversation. A finished answer folds into one assistant message: the text
-              its speakers actually said, without the reasoning or the tool traffic.
+              /agents 不會記住輪次之間的內容，因此每個請求都會包含完整對話。完成的答案會彙整成一則助理訊息，只保留角色實際說出的文字，不含推理與工具往返。
             </p>
           </Panel>
 
-          <Panel title="Not persisted">
+          <Panel title="不會儲存">
             <p className="note">
-              This screen keeps the transcript in the page and nowhere else. Reloading, or
-              pressing <strong>New session</strong>, mints a fresh session id and starts
-              over.
+              此畫面只在頁面中保存逐字稿。重新載入或按下<strong>新工作階段</strong>會建立新的工作階段 ID 並重新開始。
             </p>
           </Panel>
         </aside>
@@ -349,7 +343,7 @@ function Composer({
     <div className="panel pg-composer">
       <textarea
         className="input pg-input"
-        placeholder={busy ? 'Waiting for the run to finish…' : 'Ask something. Enter sends, Shift+Enter starts a new line.'}
+        placeholder={busy ? '正在等待執行完成…' : '請提問。Enter 傳送，Shift+Enter 換行。'}
         value={value}
         disabled={busy}
         rows={3}
@@ -363,12 +357,12 @@ function Composer({
       />
       <div className="pg-composer-actions">
         <span className="note">
-          {busy ? 'Streaming — the composer is closed until this turn ends.' : 'Enter sends · Shift+Enter for a new line'}
+          {busy ? '串流中 — 此輪結束前無法輸入。' : 'Enter 傳送 · Shift+Enter 換行'}
         </span>
         {busy ? (
           <button type="button" className="btn btn-secondary" onClick={onStop}>
             <Square size={14} strokeWidth={2.75} aria-hidden />
-            Stop
+            停止
           </button>
         ) : (
           <button
@@ -378,7 +372,7 @@ function Composer({
             onClick={onSend}
           >
             <Send size={14} strokeWidth={2.75} aria-hidden />
-            Send
+            傳送
           </button>
         )}
       </div>
@@ -408,7 +402,7 @@ function PresetPicker({
       <input
         id={id}
         className="input mono"
-        placeholder="preset name (blank = server default)"
+        placeholder="預設值名稱（留白＝伺服器預設值）"
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
@@ -440,7 +434,7 @@ function UserBubble({ content }: { content: string }) {
     <div className="pg-turn pg-turn-user">
       <div className="pg-speaker-head">
         <span className="pg-avatar pg-avatar-user">Y</span>
-        <span className="pg-name">You</span>
+        <span className="pg-name">您</span>
       </div>
       <p className="pg-text">{content}</p>
     </div>
@@ -482,7 +476,7 @@ function AssistantTurnView({
             </span>
           ))}
           <span className="note" style={{ marginLeft: 'auto' }}>
-            cast · {preset ?? 'server default'}
+            角色群 · {preset ?? '伺服器預設值'}
           </span>
         </div>
       )}
@@ -503,12 +497,12 @@ function AssistantTurnView({
       {turn.error && (
         <div style={{ marginTop: 10 }}>
           <ErrorPanel
-            title="The run failed"
+            title="執行失敗"
             detail={turn.error.message}
             copyText={`${turn.error.code} — ${turn.error.message}`}
           >
             <p className="alarm-body" style={{ marginTop: 6 }}>
-              code <span className="mono">{turn.error.code}</span>
+              錯誤代碼 <span className="mono">{turn.error.code}</span>
             </p>
           </ErrorPanel>
         </div>
@@ -521,13 +515,13 @@ function AssistantTurnView({
       )}
 
       <div className="pg-turn-foot">
-        {turn.status === 'streaming' && <span className="note">streaming…</span>}
+        {turn.status === 'streaming' && <span className="note">串流中…</span>}
         {turn.status === 'completed' && (
           <span className="note">
-            finished · <span className="mono">{turn.finishReason ?? 'unspecified'}</span>
+            已完成 · <span className="mono">{turn.finishReason ?? '未指定'}</span>
           </span>
         )}
-        {turn.status === 'aborted' && <span className="tag tag-outline">stopped</span>}
+        {turn.status === 'aborted' && <span className="tag tag-outline">已停止</span>}
         {internalPresent && (
           <label className="radio pg-toggle">
             <input
@@ -536,7 +530,7 @@ function AssistantTurnView({
               onChange={(event) => setShowInternal(event.target.checked)}
             />
             <span className="dot" />
-            <span>show internal machinery</span>
+            <span>顯示內部處理</span>
           </label>
         )}
       </div>
@@ -594,7 +588,7 @@ function SpeakerBlockView({
         {character.role && <span className="tag tag-neutral">{character.role}</span>}
         {summoner && (
           <span className="note">
-            summoned by {summoner}
+            由 {summoner} 召喚
             {block.summonedBy && (
               <>
                 {' · '}
@@ -603,7 +597,7 @@ function SpeakerBlockView({
             )}
           </span>
         )}
-        {speaking && <span className="pg-live" aria-label="speaking" />}
+        {speaking && <span className="pg-live" aria-label="正在發言" />}
       </div>
 
       <div className="pg-speaker-body">
@@ -649,7 +643,7 @@ function PartView({ part, showInternal }: { part: StreamedPart; showInternal: bo
   const internal = part.internal === true
   const wrap = (children: ReactNode) => (
     <div className={internal ? 'pg-part pg-part-internal' : 'pg-part'}>
-      {internal && showInternal && <span className="tag tag-outline pg-internal-tag">internal</span>}
+      {internal && showInternal && <span className="tag tag-outline pg-internal-tag">內部</span>}
       {children}
     </div>
   )
@@ -667,8 +661,8 @@ function PartView({ part, showInternal }: { part: StreamedPart; showInternal: bo
     return wrap(
       <details className="pg-aside">
         <summary>
-          <Brain size={13} strokeWidth={2.75} aria-hidden /> Reasoning
-          {!part.done && ' — still thinking'}
+          <Brain size={13} strokeWidth={2.75} aria-hidden /> 推理過程
+          {!part.done && ' — 思考中'}
         </summary>
         <p className="pg-aside-body">{partText(part)}</p>
       </details>,
@@ -685,12 +679,12 @@ function PartView({ part, showInternal }: { part: StreamedPart; showInternal: bo
           ) : (
             <Wrench size={13} strokeWidth={2.75} aria-hidden />
           )}
-          <span className="mono">{part.name ?? 'tool'}</span>
+          <span className="mono">{part.name ?? '工具'}</span>
           <span className={part.done ? 'tag tag-neutral' : 'tag tag-accent'}>
-            {part.done ? 'called' : 'calling…'}
+            {part.done ? '已呼叫' : '呼叫中…'}
           </span>
         </summary>
-        <pre className="pg-code">{partArguments(part) || '(no arguments)'}</pre>
+        <pre className="pg-code">{partArguments(part) || '（無參數）'}</pre>
       </details>,
     )
   }
@@ -699,7 +693,7 @@ function PartView({ part, showInternal }: { part: StreamedPart; showInternal: bo
     <details className="pg-chip">
       <summary>
         <Wrench size={13} strokeWidth={2.75} aria-hidden />
-        <span className="mono">result</span>
+        <span className="mono">結果</span>
         <span
           className={
             part.status === 'error'
@@ -709,11 +703,11 @@ function PartView({ part, showInternal }: { part: StreamedPart; showInternal: bo
                 : 'tag tag-accent'
           }
         >
-          {part.done ? (part.status ?? 'returned') : 'running…'}
+          {part.done ? (part.status ?? '已返回') : '執行中…'}
         </span>
         {part.code && <span className="mono note">{part.code}</span>}
       </summary>
-      <pre className="pg-code">{part.content ?? (part.done ? '(no content)' : '…')}</pre>
+      <pre className="pg-code">{part.content ?? (part.done ? '（無內容）' : '…')}</pre>
     </details>,
   )
 }

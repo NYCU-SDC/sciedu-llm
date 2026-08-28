@@ -73,7 +73,7 @@ export function FolderDatasetPicker({
   onChange,
   disabled,
   boxed,
-  empty = 'Nothing to choose from.',
+  empty = '沒有可選項目。',
 }: {
   items: DatasetItem[]
   selected: string[]
@@ -129,10 +129,10 @@ export function FolderDatasetPicker({
           bare
           onChange={(next) => apply(everyName, next)}
         >
-          <span className="picker-all">Select all</span>
+          <span className="picker-all">全選</span>
         </TriCheck>
         <span className="picker-count mono">
-          {onCount} of {everyName.length} selected
+          已選取 {onCount} / {everyName.length}
         </span>
       </div>
 
@@ -148,7 +148,7 @@ export function FolderDatasetPicker({
                   type="button"
                   className="picker-toggle"
                   aria-expanded={open}
-                  aria-label={`${open ? 'Collapse' : 'Expand'} ${folder.path}`}
+                  aria-label={`${open ? '收合' : '展開'} ${folder.path}`}
                   onClick={() =>
                     setCollapsed((previous) =>
                       previous.includes(folder.path)

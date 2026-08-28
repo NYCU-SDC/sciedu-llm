@@ -43,8 +43,8 @@ export function PresetsScreen() {
     <>
       <PageHeader
         kicker="config/presets"
-        title="Behaviour presets"
-        lede="A preset is one named way for the assistant to behave: which model it uses, which prompts each character speaks from, what tools it may reach for, and whether it searches your course material."
+        title="行為預設"
+        lede="預設值是助理的一組命名行為：使用哪個模型、各角色採用哪個提示詞、可使用哪些工具，以及是否搜尋課程教材。"
         actions={
           <>
             <button
@@ -53,21 +53,21 @@ export function PresetsScreen() {
               disabled={refresh.isPending}
               onClick={() => refresh.mutate()}
             >
-              {refresh.isPending ? 'Reloading…' : 'Reload from Langfuse'}
+              {refresh.isPending ? '重新載入中…' : '從 Langfuse 重新載入'}
             </button>
             <button
               type="button"
               className="btn btn-secondary"
               onClick={() => setImporting(true)}
             >
-              Import presets
+              匯入預設值
             </button>
             <button
               type="button"
               className="btn btn-primary"
               onClick={() => void navigate('/presets/new')}
             >
-              New preset
+              新增預設值
             </button>
           </>
         }
@@ -82,15 +82,15 @@ export function PresetsScreen() {
 
       {report.isError && (
         <div style={{ marginTop: 14 }}>
-          <QueryError what="Could not reload the presets from Langfuse" error={report.error} />
+          <QueryError what="無法從 Langfuse 重新載入預設值" error={report.error} />
         </div>
       )}
 
       <div className="panel table-wrap" style={{ marginTop: 14 }}>
         {presets.isError ? (
-          <QueryError what="Could not list the presets" error={presets.error} />
+          <QueryError what="無法列出預設值" error={presets.error} />
         ) : !presets.data ? (
-          <Loading what="the presets" />
+          <Loading what="預設值" />
         ) : presets.data.length === 0 ? (
           <p className="quiet">
             No presets are being served. That should not happen — the built-ins are
@@ -100,12 +100,12 @@ export function PresetsScreen() {
           <table className="table">
             <thead>
               <tr>
-                <th>Preset</th>
-                <th>Model</th>
-                <th>Cast</th>
-                <th>Course material</th>
-                <th>Tools</th>
-                <th>Where it comes from</th>
+                <th>預設值</th>
+                <th>模型</th>
+                <th>角色群</th>
+                <th>課程教材</th>
+                <th>工具</th>
+                <th>來源</th>
                 <th />
               </tr>
             </thead>
@@ -181,7 +181,7 @@ function PresetRow({
         {summary.description && <span className="cell-sub">{summary.description}</span>}
       </td>
       <td className="mono" style={{ fontSize: 12.5 }}>
-        {document ? (document.model ?? 'server default') : '…'}
+        {document ? (document.model ?? '伺服器預設值') : '…'}
       </td>
       <td style={{ fontSize: 13 }}>{cast}</td>
       <td style={{ fontSize: 13 }}>{document ? describeRagMode(document) : '…'}</td>
@@ -196,7 +196,7 @@ function PresetRow({
           className="btn btn-ghost"
           to={`/presets/${encodeURIComponent(summary.name)}`}
         >
-          {summary.builtin && !summary.shadowed_builtin ? 'view' : 'edit'}
+          {summary.builtin && !summary.shadowed_builtin ? '檢視' : '編輯'}
         </Link>
       </td>
     </tr>
@@ -222,7 +222,7 @@ function LoadBanner({
       <div className="banner banner-idle" style={{ marginTop: 20 }}>
         <span className="banner-led" />
         <div className="banner-body">
-          <div className="banner-title">Reading the preset dataset…</div>
+          <div className="banner-title">正在讀取預設值資料集…</div>
         </div>
       </div>
     )
@@ -239,15 +239,15 @@ function LoadBanner({
       <div className="banner-body">
         <div className="banner-title">
           {failedFetch
-            ? 'Langfuse could not be read — the presets already in service are still being served'
-            : `Last load ${formatUnixSeconds(fetchedAt)}`}
+            ? '無法讀取 Langfuse — 服務仍使用已載入的預設值'
+            : `上次載入時間：${formatUnixSeconds(fetchedAt)}`}
         </div>
         <div className="banner-line">
           <strong>{pluralise(loaded, 'preset')} served</strong>
           {rejected > 0 && `, ${pluralise(rejected, 'entry', 'entries')} rejected`}
         </div>
       </div>
-      {rejected > 0 && <span className="tag tag-outline">see below</span>}
+      {rejected > 0 && <span className="tag tag-outline">請見下方</span>}
     </div>
   )
 }

@@ -34,10 +34,10 @@ export function App() {
 function NotFound() {
   return (
     <PageHeader
-      title="No such page"
+      title="找不到此頁面"
       lede={
         <>
-          That address is not part of this console. <Link to="/rag">Retrieval settings</Link>{' '}
+          此網址不屬於本管理介面。<Link to="/rag">前往檢索設定</Link>{' '}
           is the front door.
         </>
       }

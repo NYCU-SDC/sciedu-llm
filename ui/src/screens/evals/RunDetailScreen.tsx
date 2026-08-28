@@ -23,20 +23,19 @@ export function RunDetailScreen() {
   if (run.isError) {
     return (
       <>
-        <PageHeader title={runId ?? 'Run'} back={<BackLink />} mono />
+        <PageHeader title={runId ?? '執行紀錄'} back={<BackLink />} mono />
         <div style={{ marginTop: 20 }}>
           <QueryError
-            what={`Could not open run '${runId}'`}
+            what={`無法開啟執行紀錄「${runId}」`}
             error={run.error}
             actions={
               <Link className="btn btn-primary" to="/evals">
-                Back to the run list
+                返回執行清單
               </Link>
             }
           />
           <p className="note" style={{ marginTop: 10 }}>
-            The run list lives in the service's memory. A restart clears it, and a run id
-            from before the restart will not be found — its traces are still in Langfuse.
+            執行清單儲存在服務記憶體中。重新啟動會清空清單，因此重啟前的執行 ID 將無法找到；其追蹤紀錄仍在 Langfuse。
           </p>
         </div>
       </>
@@ -47,8 +46,8 @@ export function RunDetailScreen() {
   if (!run.data) {
     return (
       <>
-        <PageHeader title={runId ?? 'Run'} back={<BackLink />} mono />
-        <Loading what="the run" />
+        <PageHeader title={runId ?? '執行紀錄'} back={<BackLink />} mono />
+        <Loading what="執行紀錄" />
       </>
     )
   }
@@ -83,7 +82,7 @@ export function RunDetailScreen() {
         actions={
           <>
             <button type="button" className="btn btn-secondary" onClick={runAgain}>
-              Run again with these settings
+              使用這些設定再次執行
             </button>
             {live && (
               <button
@@ -92,12 +91,12 @@ export function RunDetailScreen() {
                 onClick={() => cancel.mutate(data.run_id)}
                 disabled={cancel.isPending}
               >
-                {cancel.isPending ? 'Cancelling…' : 'Cancel this run'}
+                {cancel.isPending ? '取消中…' : '取消此次執行'}
               </button>
             )}
             {sessionUrl && (
               <a className="btn btn-primary" href={sessionUrl} target="_blank" rel="noreferrer">
-                Open traces in Langfuse
+                在 Langfuse 開啟追蹤紀錄
                 <ExternalLink size={14} strokeWidth={2.75} aria-hidden />
               </a>
             )}
@@ -111,14 +110,13 @@ export function RunDetailScreen() {
           <div className="banner-body">
             <div className="banner-title">
               {data.status === 'building'
-                ? 'Building a private index for this run'
+                ? '正在為此次執行建立專用索引'
                 : data.status === 'judging'
-                  ? 'Answering and scoring the questions'
-                  : 'Waiting to start'}
+                  ? '正在回答題目並評分'
+                  : '正在等待開始'}
             </div>
             <div className="banner-line">
-              This page re-reads the run every few seconds. The service reports the stage,
-              not a percentage.
+              此頁面每隔數秒重新讀取執行狀態。服務只回報階段，不回報百分比。
             </div>
           </div>
           <RunStatusTag status={data.status} />
@@ -128,12 +126,12 @@ export function RunDetailScreen() {
       {data.status === 'failed' && data.error && (
         <div style={{ marginTop: 20 }}>
           <ErrorPanel
-            title="This run failed"
+            title="此次執行失敗"
             detail={data.error}
             copyText={data.error}
             actions={
               <button type="button" className="btn btn-primary" onClick={runAgain}>
-                Try again with these settings
+                使用這些設定再試一次
               </button>
             }
           />
@@ -142,45 +140,45 @@ export function RunDetailScreen() {
 
       {cancel.error && (
         <div style={{ marginTop: 14 }}>
-          <QueryError what="Could not cancel this run" error={cancel.error} />
+          <QueryError what="無法取消此次執行" error={cancel.error} />
         </div>
       )}
 
       <div className="split split-wide" style={{ marginTop: 20 }}>
         <div className="col">
-          <Panel title="Settings this run used">
+          <Panel title="此次執行使用的設定">
             <table className="table">
               <tbody>
-                <ParamRow label="Status" value={<RunStatusTag status={data.status} />} />
-                <ParamRow label="Model tested" value={data.eval_model} mono />
-                <ParamRow label="Model scoring" value={data.judge_model} mono />
+                <ParamRow label="狀態" value={<RunStatusTag status={data.status} />} />
+                <ParamRow label="受測模型" value={data.eval_model} mono />
+                <ParamRow label="評分模型" value={data.judge_model} mono />
                 <ParamRow
-                  label="Course material"
+                  label="課程教材"
                   value={joinNames(data.corpus_datasets)}
                   mono
                 />
-                <ParamRow label="Question sets" value={joinNames(data.question_datasets)} mono />
-                <ParamRow label="Scoring prompts" value={joinNames(data.judge_prompts)} mono />
-                <ParamRow label="Passages per question (k)" value={String(data.k)} mono />
+                <ParamRow label="題目集" value={joinNames(data.question_datasets)} mono />
+                <ParamRow label="評分提示詞" value={joinNames(data.judge_prompts)} mono />
+                <ParamRow label="每題段落數（k）" value={String(data.k)} mono />
                 <ParamRow
-                  label="Embedding / rerank"
+                  label="嵌入／重排序"
                   value={`${data.embedding_model} / ${data.rerank_model}`}
                   mono
                 />
                 <ParamRow
-                  label="Chunking"
+                  label="片段切分"
                   value={`${data.chunk_size} / ${data.chunk_overlap}`}
                   mono
                 />
-                <ParamRow label="Max concurrency" value={String(data.max_concurrency)} mono />
-                <ParamRow label="Started" value={formatDateTime(data.started_at)} mono />
+                <ParamRow label="最大並行數" value={String(data.max_concurrency)} mono />
+                <ParamRow label="開始時間" value={formatDateTime(data.started_at)} mono />
                 <ParamRow
-                  label="Finished"
-                  value={data.finished_at ? formatDateTime(data.finished_at) : 'still running'}
+                  label="完成時間"
+                  value={data.finished_at ? formatDateTime(data.finished_at) : '仍在執行中'}
                   mono
                 />
                 <ParamRow
-                  label="Duration"
+                  label="耗時"
                   value={formatDuration(data.duration_seconds)}
                   mono
                 />
@@ -194,31 +192,30 @@ export function RunDetailScreen() {
         </div>
 
         <aside className="sticky-side">
-          <Panel title="Langfuse session">
+          <Panel title="Langfuse 工作階段">
             {data.session_id ? (
               <>
                 <div className="mono" style={{ fontSize: 12.5, wordBreak: 'break-all' }}>
                   {data.session_id}
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                  <CopyButton text={data.session_id} label="Copy session id" />
+                  <CopyButton text={data.session_id} label="複製工作階段 ID" />
                   {sessionUrl && (
                     <a className="btn btn-primary" href={sessionUrl} target="_blank" rel="noreferrer">
-                      Open in Langfuse
+                      在 Langfuse 開啟
                       <ExternalLink size={14} strokeWidth={2.75} aria-hidden />
                     </a>
                   )}
                 </div>
                 <p className="note" style={{ marginTop: 10 }}>
-                  Every question, the passages it retrieved, the answer and each score are
-                  there under this session id.
+                  每個問題、檢索到的段落、答案與各項分數都會記錄在這個工作階段 ID 下。
                   {!sessionUrl &&
-                    ' This build was not told where Langfuse lives, so there is no link — paste the id into your own Langfuse.'}
+                    ' 此版本未設定 Langfuse 位址，因此沒有連結；請將 ID 貼到您的 Langfuse。'}
                 </p>
               </>
             ) : (
               <p className="note">
-                No session id yet. The service records one once the run reaches Langfuse.
+                尚無工作階段 ID。執行送達 Langfuse 後，服務便會記錄一個 ID。
               </p>
             )}
           </Panel>
@@ -234,9 +231,7 @@ export function RunDetailScreen() {
               color: 'var(--color-accent-2-800)',
             }}
           >
-            <strong>Scores live in Langfuse.</strong> This service keeps only the run's
-            status and settings in memory — it does not aggregate the scores, so there is
-            nothing honest to show here. Open the session above to read them.
+            <strong>分數保存在 Langfuse。</strong>此服務只在記憶體中保存執行狀態與設定，不會彙整分數；請在上方開啟工作階段查看。
           </div>
         </aside>
       </div>
@@ -247,7 +242,7 @@ export function RunDetailScreen() {
 function BackLink() {
   return (
     <Link to="/evals" style={{ fontSize: 12.5 }}>
-      ← All runs
+      ← 所有執行紀錄
     </Link>
   )
 }
@@ -255,11 +250,11 @@ function BackLink() {
 function Timing({ run }: { run: EvalRun }) {
   return (
     <span style={{ fontSize: 13 }}>
-      Started {formatDateTime(run.started_at)}
+      開始於 {formatDateTime(run.started_at)}
       {run.finished_at
-        ? ` · finished ${formatDateTime(run.finished_at)}`
-        : ' · still running'}{' '}
-      · took {formatDuration(run.duration_seconds)}
+        ? ` · 完成於 ${formatDateTime(run.finished_at)}`
+        : ' · 仍在執行中'}{' '}
+      · 耗時 {formatDuration(run.duration_seconds)}
     </span>
   )
 }
@@ -291,28 +286,28 @@ function ParamRow({
 function HistoryPanel({ dataset }: { dataset: string }) {
   const history = useEvalHistory(dataset)
   return (
-    <Panel title={<>Earlier runs on {dataset}</>}>
+    <Panel title={<>{dataset} 的較早執行紀錄</>}>
       <p className="note" style={{ marginBottom: 10 }}>
-        Read back from Langfuse, so this list survives restarts.
+        從 Langfuse 讀取，因此此清單在重新啟動後仍會保留。
       </p>
       {history.isError ? (
         <p className="note" style={{ color: 'var(--color-alarm-ink)' }}>
-          Langfuse could not be read — {errorMessage(history.error)}{' '}
+          無法讀取 Langfuse — {errorMessage(history.error)}{' '}
           <button type="button" className="link-btn" onClick={() => void history.refetch()}>
-            try again
+            再試一次
           </button>
         </p>
       ) : !history.data ? (
-        <Loading what="the history" />
+        <Loading what="歷史紀錄" />
       ) : history.data.length === 0 ? (
-        <p className="note">Langfuse has no recorded runs against this dataset yet.</p>
+        <p className="note">Langfuse 尚未記錄此資料集的執行紀錄。</p>
       ) : (
         <table className="table">
           <thead>
             <tr>
-              <th>Experiment</th>
-              <th>When</th>
-              <th>Notes</th>
+              <th>實驗</th>
+              <th>時間</th>
+              <th>備註</th>
             </tr>
           </thead>
           <tbody>

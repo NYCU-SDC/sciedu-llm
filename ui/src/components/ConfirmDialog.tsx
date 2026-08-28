@@ -40,7 +40,7 @@ export function ConfirmDialog({
         <div className="dialog-body">{body}</div>
         <div className="dialog-actions">
           <button type="button" className="btn btn-secondary" onClick={onCancel}>
-            Keep things as they are
+            保持原樣
           </button>
           <button
             type="button"
@@ -53,7 +53,7 @@ export function ConfirmDialog({
             onClick={onConfirm}
             disabled={busy}
           >
-            {busy ? 'Working…' : confirmLabel}
+            {busy ? '處理中…' : confirmLabel}
           </button>
         </div>
       </div>
