@@ -43,6 +43,24 @@ them set before `pnpm build`.
 | `VITE_LANGFUSE_URL` | unset | Base URL of your Langfuse instance, e.g. `https://langfuse.example.org`. When it is unset every "open in Langfuse" link is **hidden** rather than guessed at — session ids stay copyable either way. |
 | `VITE_DEV_API_TARGET` | `http://localhost:8080` | Dev-server proxy target only; not compiled into the app. |
 
+`example.env` documents all of these — copy it to `.env` for local development.
+
+## Docker
+
+```bash
+docker build -t sciedu-llm-ui .
+docker run -p 8081:80 -e BACKEND_URL=http://llm-provider:8080 sciedu-llm-ui
+```
+
+The image (see `Dockerfile`) builds the static bundle and serves it with nginx.
+The backend URL is a **runtime** setting: the bundle makes same-origin
+`/admin/...` calls and nginx proxies them to `$BACKEND_URL` (scheme + host +
+port, no trailing slash — see `nginx/default.conf.template`), so one image
+serves every environment without a rebuild. `VITE_LANGFUSE_URL` is the one
+build-time knob: pass it as `--build-arg VITE_LANGFUSE_URL=https://...` to show
+the "open in Langfuse" links. The proxy allows 30-minute reads to survive
+synchronous RAG rebuilds.
+
 ## Screens, and how they map to the spec
 
 | Route | Screen | Spec section | API |

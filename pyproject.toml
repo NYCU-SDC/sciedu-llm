@@ -52,7 +52,19 @@ markers = [
 ]
 
 [tool.poe.tasks]
-dev = "uv run uvicorn app.main:app --reload --port 8080"
+dev-api = "uv run uvicorn app.main:app --reload --port 8080"
+dev-ui = { cmd = "pnpm dev", cwd = "ui" }
 lint = "uv run ruff check"
 format = "uv run ruff format"
 test = "uv run pytest"
+
+# Backend (:8080) and admin console (:5173) together; stops both when either
+# exits or on Ctrl-C. The console needs `pnpm install` in ui/ once beforehand.
+[tool.poe.tasks.dev]
+interpreter = "bash"
+shell = """
+trap 'kill 0 2>/dev/null' EXIT
+uv run uvicorn app.main:app --reload --port 8080 &
+( cd ui && exec pnpm dev ) &
+wait -n
+"""
