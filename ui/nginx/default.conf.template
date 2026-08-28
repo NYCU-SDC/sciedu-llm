@@ -4,6 +4,20 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Every proxy_pass below goes through this variable, which is what lets
+    # BACKEND_URL name a service that is not up yet: with a literal upstream,
+    # nginx resolves the host once at startup and *exits* if it cannot ("host
+    # not found in upstream"), so a compose stack starting both containers
+    # together would crash-loop the console until the backend won the race. Via
+    # a variable the name is resolved per request through the resolver below,
+    # which also means a backend container recreated on a new IP is picked up
+    # within `valid=` rather than at the next nginx restart.
+    #
+    # 127.0.0.11 is Docker's embedded DNS. Override DNS_RESOLVER when running
+    # somewhere that is not Docker (e.g. a cluster's own DNS service address).
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    set $backend "${BACKEND_URL}";
+
     # The /admin API lives on the backend service. No trailing slash on
     # proxy_pass: the original URI (/admin/...) is forwarded as-is.
     #
@@ -13,7 +27,7 @@ server {
     # expects JSON. The client rejects that explicitly — see `request()` in
     # src/api/client.ts — rather than letting it fail somewhere further in.
     location /admin/ {
-        proxy_pass ${BACKEND_URL};
+        proxy_pass $backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -28,7 +42,7 @@ server {
     # token, so buffering and caching are off and the read timeout outlasts a
     # long agentic run.
     location /agents {
-        proxy_pass ${BACKEND_URL};
+        proxy_pass $backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -42,7 +56,7 @@ server {
     # The top bar's backend indicator polls this every few seconds. An exact
     # match, so the SPA fallback below keeps every other route.
     location = /healthz {
-        proxy_pass ${BACKEND_URL};
+        proxy_pass $backend;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

@@ -61,9 +61,44 @@ The backend URL is a **runtime** setting: the bundle makes same-origin
 `nginx/default.conf.template`), so one image serves every environment without a
 rebuild. `VITE_LANGFUSE_URL` is the one build-time knob: pass it as
 `--build-arg VITE_LANGFUSE_URL=https://...` to show the "open in Langfuse"
-links. The `/admin/` proxy allows 30-minute reads to survive synchronous RAG
-rebuilds; the `/agents` one turns buffering off so SSE frames reach the browser
+links. The `/agents` proxy turns buffering off so SSE frames reach the browser
 as they are produced.
+
+### Runtime variables
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `BACKEND_URL` | `http://localhost:8080` | Where `/admin/*`, `/agents` and `/healthz` are proxied. **Not** `localhost` in compose — inside this container that is nginx itself. |
+| `DNS_RESOLVER` | `127.0.0.11` | The DNS server `BACKEND_URL` is resolved against. The default is Docker's embedded DNS, which serves compose service names; change it only outside Docker. |
+
+### In compose
+
+Point `BACKEND_URL` at the backend **service name** and the containers can start
+in any order:
+
+```yaml
+services:
+  llm-provider:
+    image: sciedu-llm
+    # no ports needed: only the console talks to it
+  ui:
+    image: sciedu-llm-ui
+    ports:
+      - "8081:80"
+    environment:
+      BACKEND_URL: http://llm-provider:8080
+```
+
+nginx resolves that name per request rather than at startup, so the console
+boots even when the backend is not up yet (API calls answer 502 until it is, and
+the console reports that as an error rather than pretending), and a backend
+container recreated on a new IP is followed within ten seconds — no `depends_on`
+and no restart required.
+
+If `BACKEND_URL` points anywhere that is *not* the API — the console's own
+hostname, or a gateway that routes back to it — `/admin/...` falls through to the
+SPA and answers `index.html` with a 200. The client rejects a non-JSON 2xx with a
+message naming exactly that, instead of failing deep inside a screen.
 
 ## Screens, and how they map to the spec
 

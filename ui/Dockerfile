@@ -26,7 +26,22 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # /etc/nginx/conf.d/ at container start, substituting only variables that are
 # set in the environment — nginx's own $uri/$host survive untouched.
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
-# Where /admin/* is proxied. Scheme + host + port only — no trailing slash,
-# no path. Override per deployment (e.g. http://llm-provider:8080 in compose).
+# Where /admin/*, /agents and /healthz are proxied — the one setting a
+# deployment has to get right. Scheme + host + port only: no trailing slash, no
+# path. In compose this is the backend *service name*, not localhost (localhost
+# inside this container is nginx itself):
+#
+#     services:
+#       ui:
+#         image: sciedu-llm-ui
+#         environment:
+#           BACKEND_URL: http://llm-provider:8080
+#
+# The name is resolved per request, so the backend may start after this
+# container and may be recreated on a new IP — see nginx/default.conf.template.
 ENV BACKEND_URL=http://localhost:8080
+# The DNS server that resolution goes to. 127.0.0.11 is Docker's embedded DNS,
+# which is what serves compose service names; override it when running anywhere
+# that is not Docker.
+ENV DNS_RESOLVER=127.0.0.11
 EXPOSE 80
