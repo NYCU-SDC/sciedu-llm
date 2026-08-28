@@ -1,9 +1,11 @@
 import os
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
 os.environ["ALLOWED_MODELS"] = "gpt-oss-120b"
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -143,13 +145,24 @@ async def test_list_model_ids_raises_on_failure():
         await listings.list_model_ids(_openai(exc=RuntimeError("upstream 503")))
 
 
-@pytest.mark.asyncio
-async def test_list_experiment_runs_sorted_newest_first():
-    def _runs_page(names, total_pages):
-        return SimpleNamespace(
-            data=[SimpleNamespace(name=n, created_at=c) for n, c in names],
-            meta=SimpleNamespace(total_pages=total_pages),
-        )
+# --- list_experiment_runs ---------------------------------------------------
+# Langfuse v4 keeps judge runs as *experiments*; a v4 deployment in
+# `events_only` mode answers the older dataset-runs endpoint with a 404 saying
+# so. The listing reads experiments and keeps the old endpoint as a fallback, so
+# both shapes are covered here.
+
+SINCE = datetime(2026, 6, 1, tzinfo=UTC)
+
+
+def _runs_page(names, total_pages):
+    return SimpleNamespace(
+        data=[SimpleNamespace(name=n, created_at=c) for n, c in names],
+        meta=SimpleNamespace(total_pages=total_pages),
+    )
+
+
+def _dataset_runs_langfuse():
+    """A Langfuse with no reachable REST transport, so only the old path exists."""
 
     def get_runs(*, dataset_name, page, limit):  # noqa: ARG001
         # Percent-encoded: the generated `api.*` clients interpolate path
@@ -161,11 +174,123 @@ async def test_list_experiment_runs_sorted_newest_first():
             2: _runs_page([("mid", 2)], total_pages=2),
         }[page]
 
-    langfuse = SimpleNamespace(
+    return SimpleNamespace(
         api=SimpleNamespace(datasets=SimpleNamespace(get_runs=get_runs))
     )
 
-    runs = await listings.list_experiment_runs(langfuse, "questions/biology")
+
+def _experiments_langfuse(handler):
+    """A Langfuse whose SDK internals expose a base URL, plus a dataset id lookup."""
+    wrapper = SimpleNamespace(
+        get_base_url=lambda: "https://langfuse.test/",
+        get_headers=lambda: {"Authorization": "Basic pk:sk"},
+    )
+    api = SimpleNamespace(
+        datasets=SimpleNamespace(
+            get=lambda dataset_name: SimpleNamespace(id="ds-42"),
+            get_runs=handler,
+        )
+    )
+    api._client_wrapper = wrapper
+    return SimpleNamespace(api=api)
+
+
+def _experiment(name, start_time):
+    return {
+        "id": f"exp-{name}",
+        "name": name,
+        "description": f"judge run {name}",
+        "startTime": start_time,
+        "endTime": start_time,
+        "itemCount": 3,
+        "datasetId": "ds-42",
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_experiment_runs_reads_experiments_and_follows_the_cursor():
+    seen: list[dict] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/public/experiments"
+        params = dict(request.url.params)
+        seen.append(params)
+        assert params["datasetId"] == "ds-42"
+        assert params["fromStartTime"] == SINCE.isoformat()
+        assert request.headers["Authorization"] == "Basic pk:sk"
+        if "cursor" not in params:
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        _experiment("old", "2026-06-02T10:00:00Z"),
+                        _experiment("new", "2026-08-20T10:00:00Z"),
+                    ],
+                    "meta": {"cursor": "page-2"},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "data": [_experiment("mid", "2026-07-05T10:00:00Z")],
+                "meta": {},
+            },
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        runs = await listings.list_experiment_runs(
+            _experiments_langfuse(None), "questions/biology", since=SINCE, http=http
+        )
+
+    assert [run.name for run in runs] == ["new", "mid", "old"]
+    assert [run.dataset_name for run in runs] == ["questions/biology"] * 3
+    assert runs[0].created_at == datetime(2026, 8, 20, 10, tzinfo=UTC)
+    assert runs[0].description == "judge run new"
+    # Two pages, and the second one carried the cursor from the first.
+    assert len(seen) == 2 and seen[1]["cursor"] == "page-2"
+
+
+@pytest.mark.asyncio
+async def test_list_experiment_runs_falls_back_when_experiments_are_404():
+    """An older deployment has no /experiments; the deprecated endpoint answers."""
+
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"message": "not found"})
+
+    def get_runs(*, dataset_name, page, limit):  # noqa: ARG001
+        assert dataset_name == "questions%2Fbiology"
+        return _runs_page([("only", 1)], total_pages=1)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        runs = await listings.list_experiment_runs(
+            _experiments_langfuse(get_runs), "questions/biology", since=SINCE, http=http
+        )
+
+    assert [run.name for run in runs] == ["only"]
+
+
+@pytest.mark.asyncio
+async def test_list_experiment_runs_propagates_other_experiment_failures():
+    """Only a 404 means "wrong endpoint" — a 500 is an outage and must surface."""
+
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"message": "langfuse exploded"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as http:
+        with pytest.raises(httpx.HTTPStatusError):
+            await listings.list_experiment_runs(
+                _experiments_langfuse(None),
+                "questions/biology",
+                since=SINCE,
+                http=http,
+            )
+
+
+@pytest.mark.asyncio
+async def test_list_experiment_runs_sorted_newest_first_on_the_old_endpoint():
+    runs = await listings.list_experiment_runs(
+        _dataset_runs_langfuse(), "questions/biology", since=SINCE
+    )
 
     assert [r.name for r in runs] == ["new", "mid", "old"]
 

@@ -15,9 +15,6 @@ import { detailToProblems, detailToMessage } from './errors'
  * but must resolve its URL exactly the same way. */
 export const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
-/** Rebuilds and resets are synchronous calls that re-index the whole corpus, so
- * they get a much longer leash than a listing. */
-export const LONG_TIMEOUT_MS = 30 * 60 * 1000
 const DEFAULT_TIMEOUT_MS = 30 * 1000
 
 export class ApiError extends Error {
@@ -87,11 +84,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 
   const text = await response.text()
   let payload: unknown = undefined
+  // Whether the body actually was JSON. A failed parse is kept as raw text for
+  // the error path below — an HTML 502 page from a proxy is worth showing — but
+  // must never be handed back as if it were the typed body (see below).
+  let isJson = true
   if (text) {
     try {
       payload = JSON.parse(text)
     } catch {
       payload = text
+      isJson = false
     }
   }
 
@@ -101,6 +103,20 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
         ? (payload as { detail: unknown }).detail
         : payload
     throw new ApiError(response.status, detail, `${response.status} ${response.statusText}`)
+  }
+
+  // A 2xx whose body is not JSON did not come from this API, however much it
+  // looks like success: the usual cause is a proxy answering /admin itself —
+  // nginx's SPA fallback serving index.html, or a gateway's interstitial page —
+  // with 200. Returning that string as `T` is how a mis-set BACKEND_URL used to
+  // surface as `TypeError: e.corpus_datasets is undefined` three layers into a
+  // screen instead of as the routing problem it is.
+  if (!isJson) {
+    const excerpt = text.trim().replace(/\s+/g, ' ').slice(0, 120)
+    throw new NetworkError(
+      `${method} ${path} 回應了 ${response.status}，但內容不是 JSON——` +
+        `請求可能沒有轉送到後端（檢查代理設定 / BACKEND_URL）。開頭是：${excerpt}`,
+    )
   }
 
   return payload as T

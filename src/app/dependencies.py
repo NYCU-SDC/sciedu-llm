@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import weakref
 from functools import cache
 from typing import Annotated
 
@@ -10,6 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app import listings
 from app.presets import PresetRegistry
+from app.rag_builds import RagBuildManager
 from judge import EvalRunner
 from observability import init_langfuse_client
 from rag import RAGPipeline
@@ -58,6 +61,11 @@ class Settings(BaseSettings):
     # `build_rag_pipeline`). RAG is disabled only when neither yields a dataset.
     rag_corpus_datasets: str = ""
 
+    # How far back `GET /admin/evals/history` looks. Not a preference: Langfuse's
+    # experiments endpoint requires a `fromStartTime`, so a history listing is
+    # always a window, and this is how wide.
+    evals_history_lookback_days: int = 90
+
     # Langfuse dataset folders the /admin listing endpoints filter on. A dataset
     # named "corpus/ver3/biology" is a corpus dataset; "questions/biology" is a
     # question dataset. Folders are a Langfuse naming convention, not an API
@@ -90,13 +98,53 @@ def get_settings():
 settings_dependency = Annotated[Settings, Depends(get_settings)]
 
 
-@cache
-def get_openai_client():
+#: One `AsyncOpenAI` per event loop, held weakly so a loop that goes away takes
+#: its client (and its connection pool) with it. See `get_openai_client`.
+_openai_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncOpenAI]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _build_openai_client() -> AsyncOpenAI:
     settings = get_settings()
-    client = AsyncOpenAI(
+    return AsyncOpenAI(
         base_url=settings.openai_base_url,
         api_key=settings.openai_api_key,
     )
+
+
+async def get_openai_client() -> AsyncOpenAI:
+    """The `AsyncOpenAI` client belonging to the running event loop.
+
+    Deliberately **not** a single process-wide client. httpx keeps a connection
+    pool whose primitives (the per-connection read `Event`, the pool lock) bind
+    to the loop that first used them, so a client shared across two loops fails
+    on the second with
+
+        RuntimeError: <asyncio.locks.Event ...> is bound to a different event loop
+
+    surfacing as an `openai.APIConnectionError` — a "connection error" that has
+    nothing to do with the network and does not clear up on retry, because the
+    poisoned connection stays in the pool. Two loops in one process is not
+    exotic: Starlette's `TestClient` opens a fresh portal (and loop) per request
+    unless it is used as a context manager, `pytest-asyncio` gives every test its
+    own, and `tests/app/stack_integration_test.py` serves the app from a worker
+    thread. One client per loop makes the failure structurally impossible.
+
+    This is `async` so that FastAPI resolves it on the event loop; a sync
+    dependency is run in a worker thread, where there is no running loop to key
+    on. Callers outside a request must await it from async code too.
+
+    Objects that *hold* a client rather than asking for one each time (the eval
+    runner, a `RAGPipeline`) capture the loop they were built on — which is the
+    app's loop, since both are built in the lifespan.
+    """
+    loop = asyncio.get_running_loop()
+    client = _openai_clients.get(loop)
+    if client is None:
+        client = _build_openai_client()
+        _openai_clients[loop] = client
+        logger.debug("Built an AsyncOpenAI client for event loop %r", loop)
     return client
 
 
@@ -128,7 +176,7 @@ async def validate_allowed_models() -> list[str]:
             "list of model ids the /chat endpoint is permitted to serve."
         )
 
-    client = get_openai_client()
+    client = await get_openai_client()
     try:
         served = {model.id async for model in client.models.list()}
     except Exception:
@@ -170,7 +218,7 @@ async def build_rag_pipeline() -> RAGPipeline | None:
     )
     if not names:
         return None
-    pipeline = RAGPipeline(get_openai_client(), get_langfuse_client())
+    pipeline = RAGPipeline(await get_openai_client(), get_langfuse_client())
     await pipeline.build(names)
     return pipeline
 
@@ -206,6 +254,30 @@ def get_rag_pipeline(request: Request) -> RAGPipeline | None:
 
 
 rag_pipeline_dependency = Annotated[RAGPipeline | None, Depends(get_rag_pipeline)]
+
+
+def get_rag_build_manager(
+    request: Request, rag_pipeline: rag_pipeline_dependency
+) -> RagBuildManager | None:
+    """Serve the process-wide index-build manager, or ``None`` when RAG is off.
+
+    Reached through ``rag_pipeline_dependency`` rather than ``app.state`` so a
+    test (or the fake stack) that overrides the pipeline gets a manager wrapping
+    *that* pipeline. The lifespan warms one up; the lazy branch covers an app
+    started without it, and re-wraps if the pipeline underneath was replaced.
+    """
+    if rag_pipeline is None:
+        return None
+    manager = getattr(request.app.state, "rag_build_manager", None)
+    if manager is None or manager.pipeline is not rag_pipeline:
+        manager = RagBuildManager(rag_pipeline)
+        request.app.state.rag_build_manager = manager
+    return manager
+
+
+rag_build_manager_dependency = Annotated[
+    RagBuildManager | None, Depends(get_rag_build_manager)
+]
 
 
 def get_preset_registry(

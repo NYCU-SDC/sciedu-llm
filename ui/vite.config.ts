@@ -12,13 +12,11 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
+      // Every /admin call answers promptly now that index rebuilds are scheduled
+      // rather than awaited, so this needs no timeout of its own.
       '/admin': {
         target: DEV_API_TARGET,
         changeOrigin: true,
-        // Rebuilds and resets are long synchronous calls; the proxy must not
-        // cut them off before the client's own timeout does.
-        timeout: 30 * 60 * 1000,
-        proxyTimeout: 30 * 60 * 1000,
       },
       // /agents is not under /admin, so it needs a rule of its own. It answers
       // Server-Sent Events, which http-proxy forwards chunk by chunk; the

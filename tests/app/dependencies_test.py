@@ -35,9 +35,12 @@ def _fake_client(ids=None, exc=None):
 def _install(monkeypatch, *, allowed, served=None, exc=None):
     settings = Settings(openai_api_key="mock_key", allowed_models=allowed)
     monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
-    monkeypatch.setattr(
-        dependencies, "get_openai_client", lambda: _fake_client(served, exc)
-    )
+
+    # `get_openai_client` is a coroutine function (one client per event loop).
+    async def _client():
+        return _fake_client(served, exc)
+
+    monkeypatch.setattr(dependencies, "get_openai_client", _client)
     return settings
 
 
@@ -106,9 +109,11 @@ def rag_stack(monkeypatch):
             questions_dataset_folder="questions",
         )
         monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
-        monkeypatch.setattr(
-            dependencies, "get_openai_client", lambda: SimpleNamespace()
-        )
+
+        async def _openai():
+            return SimpleNamespace()
+
+        monkeypatch.setattr(dependencies, "get_openai_client", _openai)
         monkeypatch.setattr(
             dependencies, "get_langfuse_client", lambda: SimpleNamespace()
         )

@@ -6,15 +6,20 @@ server {
 
     # The /admin API lives on the backend service. No trailing slash on
     # proxy_pass: the original URI (/admin/...) is forwarded as-is.
+    #
+    # BACKEND_URL must name the *API*, never this console: pointed at itself (or
+    # at a gateway hostname that routes back here) the SPA fallback below answers
+    # /admin with index.html and a 200, and the console is handed HTML where it
+    # expects JSON. The client rejects that explicitly — see `request()` in
+    # src/api/client.ts — rather than letting it fail somewhere further in.
     location /admin/ {
         proxy_pass ${BACKEND_URL};
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        # RAG rebuild/reset are synchronous long calls (the UI allows 30 min).
-        proxy_read_timeout 1800s;
-        proxy_send_timeout 1800s;
+        # Every /admin call answers promptly — an index rebuild is scheduled on
+        # the service and polled, not awaited — so the stock timeouts apply.
     }
 
     # /agents is not under /admin, so it needs a block of its own — and it is a

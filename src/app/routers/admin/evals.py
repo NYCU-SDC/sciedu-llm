@@ -7,11 +7,16 @@
 """
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException, Query
 
 from app import listings
-from app.dependencies import eval_runner_dependency, langfuse_dependency
+from app.dependencies import (
+    eval_runner_dependency,
+    langfuse_dependency,
+    settings_dependency,
+)
 from app.schema.admin.evals import (
     EVAL_RUN_RESPONSES,
     CHUNK_OVERLAP_DETAIL,
@@ -140,20 +145,27 @@ async def cancel_eval_run(run_id: str, runner: eval_runner_dependency):
     response_model=list[EvalHistoryEntry],
     summary="List past experiment runs recorded in Langfuse",
     description=(
-        "Reads the Langfuse dataset runs for a question dataset, newest first. "
-        "Unlike `GET /runs` this survives restarts — it is Langfuse's own record "
-        "of every judge run that has executed against the dataset."
+        "Reads the judge runs Langfuse recorded against a question dataset, "
+        "newest first. Unlike `GET /runs` this survives restarts — it is "
+        "Langfuse's own record of every judge run that has executed against the "
+        "dataset. Langfuse v4 keeps these as *experiments* and requires a start "
+        "time, so this is a window: the last `EVALS_HISTORY_LOOKBACK_DAYS` days "
+        "(90 by default), not all of history."
     ),
     responses=UPSTREAM_RESPONSES,
 )
 async def list_eval_history(
     langfuse: langfuse_dependency,
+    settings: settings_dependency,
     question_dataset: str = Query(
         description="Canonical Langfuse question dataset name, folder prefix included."
     ),
 ):
+    since = datetime.now(UTC) - timedelta(days=settings.evals_history_lookback_days)
     try:
-        runs = await listings.list_experiment_runs(langfuse, question_dataset)
+        runs = await listings.list_experiment_runs(
+            langfuse, question_dataset, since=since
+        )
     except Exception as e:
         logger.exception("Failed to list Langfuse experiment runs")
         raise HTTPException(

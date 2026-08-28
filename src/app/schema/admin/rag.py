@@ -1,4 +1,5 @@
-from typing import Any, Optional
+from datetime import datetime
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +22,44 @@ class RAGConfigValues(BaseModel):
     final_k: int = Field(gt=0)
 
 
+class RAGBuildState(BaseModel):
+    """What the background index build is doing (or last did).
+
+    Rebuilds do not happen inside the request that asks for one — they are
+    scheduled and this is how a client follows them: poll `GET /admin/rag/config`
+    while `status` is `building`. Deliberately job-level: no percentage, because
+    what a client can act on is "still going / finished / failed", and
+    `duration_seconds` says how long it has been going. Batch-by-batch progress
+    is logged by the service instead (`rag.pipeline`, at INFO).
+    """
+
+    status: Literal["idle", "building", "completed", "failed", "cancelled"] = Field(
+        description=(
+            "`idle` means no build has been started through the admin API this "
+            "process — the indexes may still be built, from startup."
+        )
+    )
+    corpus_datasets: list[str] = Field(
+        description="Corpus datasets this build is (or was) indexing."
+    )
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: float | None = Field(
+        default=None,
+        description="Elapsed seconds; counts up while a build is running.",
+    )
+    error: str | None = Field(
+        default=None, description="Why the build failed, when `status` is `failed`."
+    )
+    cancel_requested: bool = Field(
+        default=False,
+        description=(
+            "A cancel has been accepted but the build has not unwound yet, so "
+            "`status` is still `building`."
+        ),
+    )
+
+
 class RAGConfigResponse(RAGConfigValues):
     """Current effective config plus pipeline status."""
 
@@ -30,6 +69,7 @@ class RAGConfigResponse(RAGConfigValues):
     corpus_datasets: list[str] = Field(
         description="Langfuse corpus dataset names the current indexes were built from."
     )
+    build: RAGBuildState = Field(description="The state of the background index build.")
 
 
 class RAGConfigUpdate(BaseModel):
@@ -38,13 +78,18 @@ class RAGConfigUpdate(BaseModel):
     The indexes are rebuilt after applying the changes by default; set
     ``rebuild=false`` to apply without rebuilding (build-time changes then take
     effect only on the next rebuild).
+
+    Build-time changes are applied to the pipeline before the rebuild that makes
+    them real, and are rolled back if that rebuild is cancelled or fails — so a
+    later ``GET /config`` describes the indexes that are actually serving.
     """
 
     rebuild: bool = Field(
         default=True,
         description=(
             "Whether to rebuild the indexes after applying the changes. Defaults "
-            "to true. Set false to skip the rebuild."
+            "to true. Set false to skip the rebuild. The rebuild runs in the "
+            "background — this request returns as soon as it is scheduled."
         ),
     )
 
@@ -77,20 +122,28 @@ class RAGConfigUpdate(BaseModel):
 
 
 class RAGConfigUpdateResponse(BaseModel):
-    """Result of an override — the new effective config and whether a rebuild ran."""
+    """Result of an override — the new effective config and whether a build started."""
 
     config: RAGConfigResponse
-    rebuilt: bool = Field(
-        description="True when the change required and triggered an index rebuild."
+    build_started: bool = Field(
+        description=(
+            "True when the change required an index rebuild and one was "
+            "scheduled. Follow it via `config.build`."
+        )
     )
 
 
 ADMIN_RAG_RESPONSES: dict[int | str, dict[str, Any]] = {
-    502: {
-        "description": "Bad Gateway - Index rebuild failed",
+    409: {
+        "description": (
+            "Conflict - a build is already running, or a cancel was asked for "
+            "with nothing running"
+        ),
         "content": {
             "application/json": {
-                "example": {"detail": "Error during RAG rebuild: <reason>"}
+                "example": {
+                    "detail": "An index build is already running. Cancel it before starting another."
+                }
             }
         },
     },

@@ -230,6 +230,9 @@ a:hover {
     align-items: flex-end;
     justify-content: space-between;
     gap: 24px;
+    /* On a narrow window the actions drop under the title rather than squeezing
+     * it — the playground's header carries a picker as well as a button. */
+    flex-wrap: wrap;
 }
 .page-kicker {
     font-size: 11px;
@@ -653,13 +656,23 @@ a:hover {
  * accent, everyone it summons the sage second accent, which is the same pairing
  * the run-status tags use. */
 
+/* The conversation is one centred column — narrower than the console's other
+ * screens on purpose, because prose is read, not scanned — with the composer
+ * docked to the bottom of the viewport below it. */
+.pg-page {
+    max-width: 760px;
+    margin-inline: auto;
+    /* Clear the fixed dock, which is out of flow and would otherwise cover the
+     * end of the transcript. */
+    padding-bottom: 150px;
+}
+
 .pg-identity {
     display: flex;
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
     margin-top: 14px;
-    padding: 9px 12px;
     background: var(--color-neutral-100);
     border-radius: 8px;
 }
@@ -711,11 +724,19 @@ a:hover {
 
 .pg-cast {
     display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    padding-bottom: 10px;
+    padding: 16px;
+    border: 1px solid var(--color-divider);
+    border-radius: 8px;
+    margin-bottom: 12px;
+}
+.pg-characters {
+    display: flex;
     align-items: center;
     gap: 14px;
     flex-wrap: wrap;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--color-divider);
 }
 .pg-cast-chip {
     display: inline-flex;
@@ -843,10 +864,21 @@ a:hover {
     word-break: break-word;
 }
 
+/* The dock spans the window so the bar reads as part of the frame, like the top
+ * bar does; the composer inside shares the transcript column's measure so the
+ * input lines up with what it is answering. */
+.pg-dock {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 15;
+    padding: 14px 32px 16px;
+    background: var(--color-bg);
+    border-top: 1px solid var(--color-divider);
+}
 .pg-composer {
-    padding: 14px 16px;
-    position: sticky;
-    bottom: 14px;
+    max-width: 760px;
+    margin-inline: auto;
 }
 .pg-input {
     min-height: 74px;
@@ -858,6 +890,31 @@ a:hover {
     justify-content: space-between;
     gap: 14px;
     margin-top: 10px;
+}
+
+/* The preset picker sits in the page header beside "new session", so it is
+ * sized like a control in a row of buttons rather than a field in a form. */
+.pg-preset {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+}
+.pg-preset-field {
+    max-width: 260px;
+    font-size: 12.5px;
+}
+
+@media (max-width: 900px) {
+    .pg-dock {
+        padding-inline: 18px;
+    }
+    .pg-page {
+        padding-bottom: 170px;
+    }
+    .pg-preset-field {
+        max-width: 190px;
+    }
 }
 
 /* ── the import dialog ─────────────────────────────────────────────────── */

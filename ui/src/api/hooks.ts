@@ -12,7 +12,7 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query'
 
-import { LONG_TIMEOUT_MS, api } from './client'
+import { api } from './client'
 import {
   FALLBACK_TOOLS,
   isTerminal,
@@ -134,16 +134,36 @@ export function useTools(): UseQueryResult<ToolInfo[]> {
 
 // ── rag ───────────────────────────────────────────────────────────────────
 
+const BUILD_POLL_MS = 2000
+
+/** The live config — and, in `build`, whatever the index build is doing.
+ *
+ * Re-read from the service every time the screen is opened, not served from the
+ * 15s cache the other queries share: this screen's whole claim is "these are the
+ * settings in use right now", and the service can have moved on without this tab
+ * (a build finishing, a cancelled one rolling its settings back, another
+ * operator applying a change). Polls while a build is running, which is the one
+ * thing here that changes with nobody touching it. */
 export function useRagConfig(): UseQueryResult<RagConfigResponse> {
   return useQuery({
     queryKey: keys.ragConfig,
     queryFn: ({ signal }) => api.get<RagConfigResponse>('/admin/rag/config', signal),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    // `build?.` and not `build.`: a service older than this console has no
+    // `build` field at all, and an optional chain is the difference between
+    // "never polls" and a TypeError thrown inside react-query.
+    refetchInterval: (query) =>
+      query.state.data?.build?.status === 'building' ? BUILD_POLL_MS : false,
+    refetchIntervalInBackground: true,
   })
 }
 
-/** PATCH, POST /rebuild and POST /reset are all synchronous long calls: the
- * request holds open for the whole re-index. Each mutation writes the new
- * config straight into the cache so the screen never shows a stale snapshot. */
+/** PATCH, POST /rebuild, POST /rebuild/cancel and POST /reset all answer at
+ * once: a rebuild is scheduled server-side, not awaited, so none of these needs
+ * a long timeout. Each writes the returned config straight into the cache so the
+ * screen never shows a stale snapshot, and `useRagConfig` takes over polling
+ * from there. */
 export function useRagMutations() {
   const client = useQueryClient()
   const settle = (config: RagConfigResponse) => {
@@ -152,23 +172,26 @@ export function useRagMutations() {
 
   const apply = useMutation({
     mutationFn: (update: RagConfigUpdate) =>
-      api.patch<RagConfigUpdateResponse>('/admin/rag/config', update, LONG_TIMEOUT_MS),
+      api.patch<RagConfigUpdateResponse>('/admin/rag/config', update),
     onSuccess: (result) => settle(result.config),
   })
 
   const rebuild = useMutation({
-    mutationFn: () =>
-      api.post<RagConfigResponse>('/admin/rag/rebuild', undefined, LONG_TIMEOUT_MS),
+    mutationFn: () => api.post<RagConfigResponse>('/admin/rag/rebuild'),
+    onSuccess: settle,
+  })
+
+  const cancelBuild = useMutation({
+    mutationFn: () => api.post<RagConfigResponse>('/admin/rag/rebuild/cancel'),
     onSuccess: settle,
   })
 
   const reset = useMutation({
-    mutationFn: () =>
-      api.post<RagConfigUpdateResponse>('/admin/rag/reset', undefined, LONG_TIMEOUT_MS),
+    mutationFn: () => api.post<RagConfigUpdateResponse>('/admin/rag/reset'),
     onSuccess: (result) => settle(result.config),
   })
 
-  return { apply, rebuild, reset }
+  return { apply, rebuild, cancelBuild, reset }
 }
 
 // ── presets ───────────────────────────────────────────────────────────────

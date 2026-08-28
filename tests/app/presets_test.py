@@ -760,7 +760,11 @@ async def test_startup_survives_a_failed_seed(monkeypatch, caplog):
     monkeypatch.setattr(main, "validate_allowed_models", _allowed)
     monkeypatch.setattr(main, "build_rag_pipeline", _no_rag)
     monkeypatch.setattr(main, "get_langfuse_client", _FakeLangfuse)
-    monkeypatch.setattr(main, "get_openai_client", SimpleNamespace)
+
+    async def _openai():
+        return SimpleNamespace()
+
+    monkeypatch.setattr(main, "get_openai_client", _openai)
     monkeypatch.setattr(
         main, "EvalRunner", lambda *_args: SimpleNamespace(shutdown=lambda: None)
     )

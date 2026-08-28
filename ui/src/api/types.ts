@@ -32,10 +32,33 @@ export interface RagConfigValues {
   final_k: number
 }
 
-/** RAGConfigResponse — the effective config plus pipeline status. */
+/** RAGBuildState.status — `idle` means nothing has been built through the admin
+ * API this process, which says nothing about whether an index exists (the server
+ * builds one at startup). */
+export type RagBuildStatus = 'idle' | 'building' | 'completed' | 'failed' | 'cancelled'
+
+/** RAGBuildState — what the background index build is doing, or last did. There
+ * is no progress figure because the service reports none. */
+export interface RagBuildState {
+  status: RagBuildStatus
+  corpus_datasets: string[]
+  started_at: string | null
+  finished_at: string | null
+  duration_seconds: number | null
+  error: string | null
+  cancel_requested: boolean
+}
+
+/** RAGConfigResponse — the effective config plus pipeline status.
+ *
+ * `build` is optional only to survive a split deployment: a service older than
+ * this console does not send it, and the retrieval screen should degrade to "no
+ * build state known" rather than crash. Against a current service it is always
+ * there. */
 export interface RagConfigResponse extends RagConfigValues {
   is_built: boolean
   corpus_datasets: string[]
+  build?: RagBuildState
 }
 
 /** RAGConfigUpdate — a partial override. `rebuild` defaults to true server-side. */
@@ -44,10 +67,11 @@ export interface RagConfigUpdate extends Partial<RagConfigValues> {
   corpus_datasets?: string[]
 }
 
-/** RAGConfigUpdateResponse */
+/** RAGConfigUpdateResponse. `build_started` means a rebuild was *scheduled* —
+ * it runs in the background and is followed through `config.build`. */
 export interface RagConfigUpdateResponse {
   config: RagConfigResponse
-  rebuilt: boolean
+  build_started: boolean
 }
 
 /** Keys of the config whose value only takes effect once the index is rebuilt.

@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -13,27 +14,48 @@ from app.dependencies import (
     validate_allowed_models,
 )
 from app.presets import PresetRegistry, ensure_default_presets
+from app.rag_builds import RagBuildManager
 from app.routers import admin, agents, chat, health, title
 from judge import EvalRunner
 
 load_dotenv()
 
+# `level` is not optional here, however tempting the default looks: without it
+# the root logger stays at WARNING and every INFO line this service writes — the
+# index-build progress, the eval-run phases, "application started" — is dropped
+# before it reaches a handler. Read from LOG_LEVEL (via .env too, loaded above)
+# because logging has to be configured at import, long before Settings exists.
 logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(module)s: %(message)s",
     datefmt="%m/%d/%Y %H:%M:%S",
 )
+
+# httpx logs one INFO line per request. At our level that is a line per embedding
+# batch — hundreds during a rebuild, drowning the progress lines that are meant
+# to be read. Errors still come through, and the app reports its own upstream
+# failures anyway.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()  # Forces loading of settings
     logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
 
     allowed_models = await validate_allowed_models()
     logger.info("Allowed chat models: %s", allowed_models)
 
     app.state.rag_pipeline = await build_rag_pipeline()
+    # Later rebuilds go through the manager, which runs them as a background task
+    # so the admin request that asks for one is not held open for the whole
+    # re-index (and can be cancelled). The startup build above is deliberately
+    # not one of them: the app should not start serving on a half-built index.
+    app.state.rag_build_manager = (
+        RagBuildManager(app.state.rag_pipeline)
+        if app.state.rag_pipeline is not None
+        else None
+    )
     if app.state.rag_pipeline is not None:
         logger.info(
             "RAG pipeline built from corpus datasets: %s",
@@ -87,12 +109,14 @@ async def lifespan(app: FastAPI):
     # Evaluation runs are scheduled onto this loop and outlive the request that
     # started them, so the runner has to be born with the app and told to stop
     # with it — otherwise shutdown would strand in-flight runs mid-experiment.
-    app.state.eval_runner = EvalRunner(get_openai_client(), get_langfuse_client())
+    app.state.eval_runner = EvalRunner(await get_openai_client(), get_langfuse_client())
 
     logger.info("Application successfully started")
     yield
 
     app.state.eval_runner.shutdown()
+    if app.state.rag_build_manager is not None:
+        app.state.rag_build_manager.shutdown()
 
 
 app = FastAPI(lifespan=lifespan)

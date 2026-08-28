@@ -39,6 +39,7 @@ from app.dependencies import (  # noqa: E402
     get_settings,
 )
 from app.main import app  # noqa: E402
+from rag.config import get_rag_config  # noqa: E402
 
 
 def chunk(*, content=None, tool_calls=None, finish_reason=None):
@@ -218,6 +219,37 @@ class FakeLangfuse:
 
 
 class FakeRAG:
+    """Enough of `RAGPipeline` for both /agents and the retrieval admin screen.
+
+    `build` deliberately takes its time, in short awaits: the admin screen's
+    "stop the rebuild" affordance is only exercisable against a build that is
+    still running and that cancels promptly, and a fake that returned at once
+    would leave that path untested by hand.
+    """
+
+    #: How long a fake re-index pretends to take, and the step it sleeps in.
+    BUILD_SECONDS = 45.0
+    BUILD_STEP_SECONDS = 0.25
+
+    def __init__(self):
+        self._values = get_rag_config().model_dump()
+        self.is_built = True
+        self.corpus_dataset_names = ["corpus/ver3/biology"]
+
+    def config_snapshot(self):
+        return dict(self._values)
+
+    def apply_overrides(self, overrides):
+        self._values.update(overrides)
+
+    async def build(self, corpus_dataset_names, **_kwargs):
+        elapsed = 0.0
+        while elapsed < self.BUILD_SECONDS:
+            await asyncio.sleep(self.BUILD_STEP_SECONDS)
+            elapsed += self.BUILD_STEP_SECONDS
+        self.corpus_dataset_names = list(corpus_dataset_names)
+        self.is_built = True
+
     async def retrieve(self, *, query, **_kwargs):
         await asyncio.sleep(0.4)
         return {
@@ -259,7 +291,11 @@ def build_fake_app():
     fake_openai = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     app.dependency_overrides[get_openai_client] = lambda: fake_openai
     app.dependency_overrides[get_langfuse_client] = FakeLangfuse
-    app.dependency_overrides[get_rag_pipeline] = FakeRAG
+    # One pipeline for the whole process, not one per request: the retrieval
+    # admin screen tunes it and follows a rebuild across several calls, and a
+    # fresh instance each time would forget both.
+    fake_rag = FakeRAG()
+    app.dependency_overrides[get_rag_pipeline] = lambda: fake_rag
 
     # The lifespan validates models and builds a corpus; neither applies here.
     # The preset registry is built lazily on the first request instead, off the
