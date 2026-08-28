@@ -2,6 +2,7 @@ import os
 from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
+os.environ["OPENAI_DEFAULT_MODEL"] = "gpt-oss-120b"
 
 import pytest
 

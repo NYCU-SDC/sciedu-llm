@@ -6,6 +6,9 @@ from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
 os.environ["ALLOWED_MODELS"] = "gpt-oss-120b,custom-model"
+# Pinned so a developer's local .env cannot decide which model these tests
+# ask for — an OPENAI_DEFAULT_MODEL outside ALLOWED_MODELS reds the whole suite.
+os.environ["OPENAI_DEFAULT_MODEL"] = "gpt-oss-120b"
 
 import pytest
 from fastapi.testclient import TestClient

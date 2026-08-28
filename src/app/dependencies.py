@@ -26,6 +26,20 @@ class Settings(BaseSettings):
     chat_title_prompt_name: str = "app/chat-title-generator"
     chat_title_max_attempts: int = 3
 
+    # Agentic (/agents) config. `agents_subagent_prompt_name` must exist in
+    # Langfuse as a *chat* prompt taking a `{{task}}` variable — it is what the
+    # summoned character is told to do. The display names are what the frontend
+    # puts on each speaker's name tag (sent up front in the `cast` event).
+    agents_subagent_prompt_name: str = "agents/subagent"
+    agents_orchestrator_display_name: str = "助教"
+    agents_subagent_display_name: str = "學生"
+    # Turns the subagent may take before it is forced to answer. Kept small: it
+    # runs inside one of the orchestrator's steps, so its budget compounds.
+    agents_subagent_max_steps: int = 3
+    # How long a single tool may go without producing anything before it is
+    # abandoned and reported to the model as a timeout.
+    agents_tool_timeout_seconds: float = 60.0
+
     # Comma-separated Langfuse corpus dataset names to index for RAG-enabled chat.
     # Read from RAG_CORPUS_DATASETS. Leave empty to disable RAG (the /chat
     # `enable_rag` flag then returns 503 until at least one dataset is configured).
