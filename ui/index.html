@@ -2,7 +2,13 @@
 <html lang="zh-Hant">
     <head>
         <meta charset="UTF-8" />
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <!-- Referenced from src/, not public/, so Vite puts it through the asset
+         pipeline and gives it a content hash. A hashed URL is the only cache
+         busting that needs no cooperation: /assets/* is served immutable, and a
+         changed icon is a changed filename, so no browser and no CDN can serve
+         the previous one. A copy in public/ would keep its name forever and had
+         to be purged out of Cloudflare by hand. -->
+        <link rel="icon" type="image/svg+xml" href="/src/assets/favicon.svg" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <!-- Caprasimo + Figtree are pulled in by the design system's own
          @import at the top of src/styles/organic.css; these two hints just get
