@@ -29,6 +29,11 @@ INVALID_ARGUMENTS: Final = "invalid_arguments"
 TOOL_FAILED: Final = "tool_failed"
 TOOL_TIMEOUT: Final = "tool_timeout"
 TOOL_UNAVAILABLE: Final = "tool_unavailable"
+# A tool call the model asked for that never became executable — no tool name
+# arrived, or the id duplicated one already used in the same turn. There is no
+# well-formed call to answer with a `role: "tool"` message, so the model is told
+# in a system note instead (see `lost_tool_calls_note`).
+LOST_TOOL_CALL: Final = "lost_tool_call"
 SUBAGENT_FAILED: Final = "subagent_failed"
 DEPTH_EXCEEDED: Final = "depth_exceeded"
 
@@ -103,6 +108,33 @@ def tool_unavailable_message(name: str) -> str:
     return (
         f"`{name}` 目前無法使用（伺服器未提供這項服務）。"
         "請改用你已知的內容回答，並告知使用者這次沒有查詢課本。"
+    )
+
+
+def lost_tool_call_message(reason: str) -> str:
+    """Client-facing text for a tool call that could not be executed at all.
+
+    Only reaches the frontend: the model hears about it through
+    `lost_tool_calls_note`, because a `role: "tool"` message needs a matching
+    `tool_calls` entry in the assistant message and a lost call has none.
+    """
+    return f"這個工具呼叫沒有被執行（{reason}）。"
+
+
+def lost_tool_calls_note(reasons: list[str]) -> str:
+    """System note for tool calls that never made it as far as running.
+
+    The alternative — which this replaces — was silence: the call was dropped
+    with a server-side warning, the model was handed no result and no
+    explanation, and if it was the turn's only call the run ended there with an
+    empty answer. A model that cannot see that its call went nowhere cannot
+    retry it, and cannot tell the user either.
+    """
+    detail = "；".join(reasons) if reasons else "原因不明"
+    return (
+        f"你上一輪要求的工具呼叫沒有被執行（{detail}）。"
+        "這些呼叫沒有任何結果，請重新正確地呼叫一次，"
+        "或直接依你已知的內容回答使用者。"
     )
 
 

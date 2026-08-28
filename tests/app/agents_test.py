@@ -925,6 +925,146 @@ def test_agents_tool_exception_does_not_leak_the_upstream_message(
     assert _types(events)[-1] == "done"
 
 
+# --- tool calls that never became a call ------------------------------------
+# A model can ask for a tool in a way the engine cannot execute: no tool name in
+# the stream, an id that duplicates another call in the same turn, or a
+# `finish_reason: "tool_calls"` with no call attached (a provider-side tool-call
+# parser dropping the payload). These used to be dropped with nothing but a
+# server-side warning: no `tool_result`, no message back to the model, and — when
+# it was the turn's only call — the loop read "no tool calls" as "the answer is
+# done" and ended the run with no text at all. The model could not see that its
+# call went nowhere, so it could neither retry nor tell the user.
+
+
+def _lost_note(completions) -> str | None:
+    """The system note about lost calls, from the last request made."""
+    for message in reversed(completions.calls[-1]["messages"]):
+        if message.get("role") == "system" and "沒有被執行" in message.get(
+            "content", ""
+        ):
+            return message["content"]
+    return None
+
+
+def test_agents_a_tool_call_with_no_name_is_reported_to_the_model(
+    client, override_openai, override_rag
+):
+    completions = override_openai(
+        [
+            [
+                # Arguments arrive, the tool name never does.
+                _tool_call_chunk(0, call_id="call_1", arguments='{"query": "x"}'),
+                _text_chunk(None, "tool_calls"),
+            ],
+            [_text_chunk("我先直接回答。"), _text_chunk(None, "stop")],
+        ]
+    )
+    override_rag(_FakeRAGPipeline())
+
+    events = _parse_sse(_post(client, preset="solo-rag").text)
+
+    # The run does not end on the lost call: the model gets another turn...
+    assert len(completions.calls) == 2
+    # ...and is told why it has no result to work with.
+    note = _lost_note(completions)
+    assert note is not None and "沒有工具名稱" in note
+    # ...and the user gets a real answer instead of an empty turn.
+    assert "我先直接回答。" in "".join(e["delta"] for e in _of_type(events, "delta"))
+    assert _types(events)[-1] == "done"
+
+
+def test_agents_a_duplicate_tool_call_id_is_closed_out_and_reported(
+    client, override_openai, override_rag
+):
+    completions = override_openai(
+        [
+            [
+                _tool_call_chunk(
+                    0, call_id="dup", name="rag_search", arguments='{"query": "a"}'
+                ),
+                _tool_call_chunk(
+                    1, call_id="dup", name="rag_search", arguments='{"query": "b"}'
+                ),
+                _text_chunk(None, "tool_calls"),
+            ],
+            [_text_chunk("答案"), _text_chunk(None, "stop")],
+        ]
+    )
+    override_rag(_FakeRAGPipeline())
+
+    events = _parse_sse(_post(client, preset="solo-rag").text)
+
+    results = [
+        e["part"]
+        for e in _of_type(events, "part_end")
+        if e["part"]["type"] == "tool_result"
+    ]
+    # One real result, and one marking the duplicate as never executed — the
+    # frontend would otherwise be left with a tool call that never resolves.
+    assert [r["status"] for r in results] == ["error", "ok"]
+    lost = next(r for r in results if r["status"] == "error")
+    assert lost["code"] == "lost_tool_call"
+    # Every tool_call part is closed, so nothing is left mid-stream.
+    calls_started = [
+        e for e in _of_type(events, "part_start") if e["part"]["type"] == "tool_call"
+    ]
+    calls_ended = [
+        e for e in _of_type(events, "part_end") if e["part"]["type"] == "tool_call"
+    ]
+    assert len(calls_started) == len(calls_ended) == 2
+
+    note = _lost_note(completions)
+    assert note is not None and "重複" in note
+
+
+def test_agents_a_turn_claiming_tool_calls_but_sending_none_still_answers(
+    client, override_openai, override_rag
+):
+    completions = override_openai(
+        [
+            # The upstream says it is calling a tool and sends no call at all.
+            [_text_chunk(None, "tool_calls")],
+            [_text_chunk("改用已知內容回答"), _text_chunk(None, "stop")],
+        ]
+    )
+    override_rag(_FakeRAGPipeline())
+
+    events = _parse_sse(_post(client, preset="solo-rag").text)
+
+    assert len(completions.calls) == 2
+    note = _lost_note(completions)
+    assert note is not None and "finish_reason=tool_calls" in note
+    assert "改用已知內容回答" in "".join(e["delta"] for e in _of_type(events, "delta"))
+    assert _types(events)[-1] == "done"
+
+
+def test_agents_a_lost_call_note_lands_after_this_turns_tool_results(
+    client, override_openai, override_rag
+):
+    """Ordering matters: a `role: "tool"` message has to follow its assistant
+    message with no other role in between, or a strict upstream rejects it."""
+    completions = override_openai(
+        [
+            [
+                _tool_call_chunk(
+                    0, call_id="dup", name="rag_search", arguments='{"query": "a"}'
+                ),
+                _tool_call_chunk(
+                    1, call_id="dup", name="rag_search", arguments='{"query": "b"}'
+                ),
+                _text_chunk(None, "tool_calls"),
+            ],
+            [_text_chunk("答案"), _text_chunk(None, "stop")],
+        ]
+    )
+    override_rag(_FakeRAGPipeline())
+
+    _post(client, preset="solo-rag")
+
+    roles = [m["role"] for m in completions.calls[1]["messages"]]
+    assert roles == ["user", "assistant", "tool", "system"]
+
+
 def test_agents_tool_timeout_becomes_a_recoverable_error(
     client, override_openai, override_rag, override_settings
 ):

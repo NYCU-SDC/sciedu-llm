@@ -64,6 +64,11 @@ MAX_CONSECUTIVE_TOOL_ERRORS = 3
 
 DEFAULT_TOOL_TIMEOUT_SECONDS = 60.0
 
+# `finish_reason` values that mean "I am calling a tool". If a turn ends on one
+# of these and no executable call came out of the stream, something was lost in
+# transit and the model has to be told — see `_note_lost_calls`.
+_TOOL_FINISH_REASONS: frozenset[str] = frozenset({"tool_calls", "function_call"})
+
 
 class UpstreamError(RuntimeError):
     """The upstream OpenAI-compatible API failed. Terminal for the stream."""
@@ -138,6 +143,10 @@ class AgentRunner:
         # Set while streaming one turn.
         self._turn_tool_parts: list[tuple[Part, bool]] = []
         self._turn_text = ""
+        # Tool calls this turn asked for that never became executable, as short
+        # reasons for the model. Kept separate from `_turn_tool_parts` because
+        # there is nothing to run and no `tool_call_id` to answer against.
+        self._turn_lost_calls: list[str] = []
 
     # --- public surface ----------------------------------------------------
 
@@ -209,7 +218,7 @@ class AgentRunner:
             async for event in self._stream_turn(step=step, tools_active=tools_active):
                 yield event
 
-            if not self._turn_tool_parts:
+            if not self._turn_tool_parts and not self._turn_lost_calls:
                 return
 
             spoke_elsewhere = False
@@ -227,6 +236,29 @@ class AgentRunner:
                 # frontend switches the speaker back before the next part arrives.
                 yield AgentStartEvent(agent=self._character.id)
 
+            if self._turn_lost_calls:
+                # The model asked for something that never ran. It gets a note
+                # rather than a `tool_result`: a `role: "tool"` message is only
+                # valid against a `tool_calls` entry in the assistant message,
+                # and a lost call has none to point at. Appended *after* this
+                # turn's tool results, because a tool message has to follow its
+                # assistant message with no other role in between.
+                logger.warning(
+                    "%d tool call(s) never executed: %s",
+                    len(self._turn_lost_calls),
+                    "; ".join(self._turn_lost_calls),
+                )
+                self._messages.append(
+                    {
+                        "role": "system",
+                        "content": errors.lost_tool_calls_note(self._turn_lost_calls),
+                    }
+                )
+
+            # Reaching here with no executed calls means every call this turn was
+            # lost: the loop goes round so the model can retry or answer, because
+            # returning instead is how an empty answer with no explanation
+            # reaches the user.
             if step >= self._max_steps:
                 async for event in self._forced_final_turn(
                     step=step + 1, note=errors.max_steps_note()
@@ -255,6 +287,7 @@ class AgentRunner:
         """
         self._turn_tool_parts = []
         self._turn_text = ""
+        self._turn_lost_calls = []
 
         agent = self._character.id
         open_index: int | None = None
@@ -371,6 +404,7 @@ class AgentRunner:
 
                 for event in self._close_tool_calls(pending):
                     yield event
+                self._note_lost_calls(pending)
 
             except Exception:
                 failed = True
@@ -465,20 +499,31 @@ class AgentRunner:
         part.raw_arguments = entry["args"]
 
     def _close_tool_calls(self, pending: dict[int, dict[str, Any]]) -> list[Event]:
-        """Finish every tool_call part of this turn and record it for execution."""
+        """Finish every tool_call part of this turn and record it for execution.
+
+        A call that cannot be executed is recorded in ``_turn_lost_calls`` instead
+        of being dropped in silence — the loop turns that into a note the model
+        can act on. Where a part was already opened for it (so the frontend has
+        been shown a tool call), it is also closed and given an error
+        ``tool_result``, or the UI would sit on a call that never resolves.
+        """
         events: list[Event] = []
         seen_ids: set[str] = set()
         for tc_index in sorted(pending):
             entry = pending[tc_index]
             part: Part | None = entry["part"]
             if part is None:
-                logger.warning(
-                    "dropping tool call %d: the model never sent a tool name", tc_index
-                )
+                # No name ever arrived, so no part was opened and there is
+                # nothing to show the client — only the model needs telling.
+                self._turn_lost_calls.append(f"第 {tc_index + 1} 個呼叫沒有工具名稱")
                 continue
             if part.tool_call_id in seen_ids:
-                # A duplicate id would make the assistant message invalid upstream.
-                logger.warning("dropping duplicate tool_call_id %s", part.tool_call_id)
+                # A duplicate id would make the assistant message invalid
+                # upstream, so this call cannot run; close it out visibly.
+                reason = f"`{part.name}` 的 tool_call_id 與同一輪的另一個呼叫重複"
+                self._turn_lost_calls.append(reason)
+                events.append(PartEndEvent(entry["index"], part))
+                events.extend(self._lost_result_events(part, reason))
                 continue
             seen_ids.add(part.tool_call_id or "")
 
@@ -505,6 +550,40 @@ class AgentRunner:
             events.append(PartEndEvent(entry["index"], part))
             self._turn_tool_parts.append((part, parse_failed))
         return events
+
+    def _note_lost_calls(self, pending: dict[int, dict[str, Any]]) -> None:
+        """Catch a turn that said it was calling a tool but produced none.
+
+        `finish_reason: "tool_calls"` with nothing in the stream to build a call
+        from happens with real providers (a tool-call parser that drops the
+        payload, a truncated response). Nothing above notices, because there is
+        no fragment to fail on — and the loop used to read "no tool calls" as
+        "the answer is finished" and end the run with no text at all.
+        """
+        if self._turn_tool_parts or self._turn_lost_calls or pending:
+            return
+        if self._finish_reason not in _TOOL_FINISH_REASONS:
+            return
+        self._turn_lost_calls.append(
+            f"上游回報 finish_reason={self._finish_reason}，但沒有送出任何工具呼叫"
+        )
+
+    def _lost_result_events(self, part: Part, reason: str) -> list[Event]:
+        """A `tool_result` part marking one call as never executed.
+
+        Client-facing only: no `role: "tool"` message goes with it, because the
+        call it would answer is not in the assistant message either.
+        """
+        index, result = self._ledger.open(
+            "tool_result",
+            agent=self._character.id,
+            internal=part.internal,
+            tool_call_id=part.tool_call_id,
+        )
+        result.status = "error"
+        result.code = errors.LOST_TOOL_CALL
+        result.content = errors.lost_tool_call_message(reason)
+        return [PartStartEvent(index, result), PartEndEvent(index, result)]
 
     def _append_assistant_message(self) -> None:
         """Replay the turn back into the history so the next step is well-formed."""
