@@ -39,11 +39,11 @@ pnpm lint           # oxlint
 Both are read at **build time** (Vite inlines them), so a production build needs
 them set before `pnpm build`.
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `VITE_API_BASE_URL` | `""` (same origin) | Where the backend lives — it prefixes `/admin/...`, `/agents` and `/healthz` alike. Leave empty when the console is served by the backend itself. In dev the value is ignored in favour of the proxy unless you set it explicitly. |
-| `VITE_LANGFUSE_URL` | unset | Base URL of your Langfuse instance, e.g. `https://langfuse.example.org`. When it is unset every "open in Langfuse" link is **hidden** rather than guessed at — session ids stay copyable either way. |
-| `VITE_DEV_API_TARGET` | `http://localhost:8080` | Dev-server proxy target only; not compiled into the app. |
+| Variable              | Default                 | What it does                                                                                                                                                                                                                       |
+| --------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VITE_API_BASE_URL`   | `""` (same origin)      | Where the backend lives — it prefixes `/admin/...`, `/agents` and `/healthz` alike. Leave empty when the console is served by the backend itself. In dev the value is ignored in favour of the proxy unless you set it explicitly. |
+| `VITE_LANGFUSE_URL`   | unset                   | Base URL of your Langfuse instance, e.g. `https://langfuse.example.org`. When it is unset every "open in Langfuse" link is **hidden** rather than guessed at — session ids stay copyable either way.                               |
+| `VITE_DEV_API_TARGET` | `http://localhost:8080` | Dev-server proxy target only; not compiled into the app.                                                                                                                                                                           |
 
 `example.env` documents all of these — copy it to `.env` for local development.
 
@@ -66,10 +66,10 @@ as they are produced.
 
 ### Runtime variables
 
-| Variable | Default | What it does |
-| --- | --- | --- |
-| `BACKEND_URL` | `http://localhost:8080` | Where `/admin/*`, `/agents` and `/healthz` are proxied. **Not** `localhost` in compose — inside this container that is nginx itself. |
-| `DNS_RESOLVER` | `127.0.0.11` | The DNS server `BACKEND_URL` is resolved against. The default is Docker's embedded DNS, which serves compose service names; change it only outside Docker. |
+| Variable       | Default                 | What it does                                                                                                                                               |
+| -------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BACKEND_URL`  | `http://localhost:8080` | Where `/admin/*`, `/agents` and `/healthz` are proxied. **Not** `localhost` in compose — inside this container that is nginx itself.                       |
+| `DNS_RESOLVER` | `127.0.0.11`            | The DNS server `BACKEND_URL` is resolved against. The default is Docker's embedded DNS, which serves compose service names; change it only outside Docker. |
 
 ### In compose
 
@@ -78,15 +78,15 @@ in any order:
 
 ```yaml
 services:
-  llm-provider:
-    image: sciedu-llm
-    # no ports needed: only the console talks to it
-  ui:
-    image: sciedu-llm-ui
-    ports:
-      - "8081:80"
-    environment:
-      BACKEND_URL: http://llm-provider:8080
+    llm-provider:
+        image: sciedu-llm
+        # no ports needed: only the console talks to it
+    ui:
+        image: sciedu-llm-ui
+        ports:
+            - "8081:80"
+        environment:
+            BACKEND_URL: http://llm-provider:8080
 ```
 
 nginx resolves that name per request rather than at startup, so the console
@@ -95,22 +95,22 @@ the console reports that as an error rather than pretending), and a backend
 container recreated on a new IP is followed within ten seconds — no `depends_on`
 and no restart required.
 
-If `BACKEND_URL` points anywhere that is *not* the API — the console's own
+If `BACKEND_URL` points anywhere that is _not_ the API — the console's own
 hostname, or a gateway that routes back to it — `/admin/...` falls through to the
 SPA and answers `index.html` with a 200. The client rejects a non-JSON 2xx with a
 message naming exactly that, instead of failing deep inside a screen.
 
 ## Screens, and how they map to the spec
 
-| Route | Screen | Spec section | API |
-| --- | --- | --- | --- |
-| `/rag` (default) | Retrieval settings | 1. RAG configuration | `GET`/`PATCH /admin/rag/config`, `POST /admin/rag/rebuild`, `POST /admin/rag/reset`, `GET /admin/datasets`, `GET /admin/models` |
-| `/presets` | Behaviour presets | 2. Preset management | `GET /admin/presets`, `GET /admin/presets/{name}`, `POST /admin/presets/refresh` |
-| `/presets/:name`, `/presets/new` | Preset editor | 2. Preset management | `GET`/`PUT`/`DELETE /admin/presets/{name}`, `GET /admin/models` |
-| `/evals` | Evaluations | 3. Evaluation runs | `POST`/`GET /admin/evals/runs`, `POST /admin/evals/runs/{id}/cancel`, `GET /admin/datasets`, `GET /admin/judge-prompts`, `GET /admin/models` |
-| `/evals/runs/:runId` | Run detail | 3. Evaluation runs | `GET /admin/evals/runs/{id}`, `GET /admin/evals/history`, cancel |
-| `/playground` | Playground | manual testing, not in `docs/admin-ui-spec.md` | `POST /agents` (SSE), `GET /admin/presets` |
-| `/reference` | What's available | Supporting lookups | `GET /admin/models`, `GET /admin/datasets`, `GET /admin/judge-prompts` |
+| Route                            | Screen             | Spec section                                   | API                                                                                                                                          |
+| -------------------------------- | ------------------ | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/rag` (default)                 | Retrieval settings | 1. RAG configuration                           | `GET`/`PATCH /admin/rag/config`, `POST /admin/rag/rebuild`, `POST /admin/rag/reset`, `GET /admin/datasets`, `GET /admin/models`              |
+| `/presets`                       | Behaviour presets  | 2. Preset management                           | `GET /admin/presets`, `GET /admin/presets/{name}`, `POST /admin/presets/refresh`                                                             |
+| `/presets/:name`, `/presets/new` | Preset editor      | 2. Preset management                           | `GET`/`PUT`/`DELETE /admin/presets/{name}`, `GET /admin/models`                                                                              |
+| `/evals`                         | Evaluations        | 3. Evaluation runs                             | `POST`/`GET /admin/evals/runs`, `POST /admin/evals/runs/{id}/cancel`, `GET /admin/datasets`, `GET /admin/judge-prompts`, `GET /admin/models` |
+| `/evals/runs/:runId`             | Run detail         | 3. Evaluation runs                             | `GET /admin/evals/runs/{id}`, `GET /admin/evals/history`, cancel                                                                             |
+| `/playground`                    | Playground         | manual testing, not in `docs/admin-ui-spec.md` | `POST /agents` (SSE), `GET /admin/presets`                                                                                                   |
+| `/reference`                     | What's available   | Supporting lookups                             | `GET /admin/models`, `GET /admin/datasets`, `GET /admin/judge-prompts`                                                                       |
 
 The top bar carries exactly those top-level entries; the preset editor and the
 run detail are sub-screens reached by opening a row. Beside them, on the right

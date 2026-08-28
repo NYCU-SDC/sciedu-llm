@@ -249,7 +249,7 @@ export function RunDetailScreen() {
                                 <ParamRow
                                     label="耗時"
                                     value={formatDuration(
-                                        data.duration_seconds,
+                                        data.duration_seconds
                                     )}
                                     mono
                                 />

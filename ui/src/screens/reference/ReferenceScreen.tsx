@@ -50,7 +50,7 @@ export function ReferenceScreen() {
                                         {models.data?.models.map((id) => {
                                             const allowed =
                                                 models.data.allowed_models.includes(
-                                                    id,
+                                                    id
                                                 );
                                             return (
                                                 <tr key={id}>
@@ -85,8 +85,7 @@ export function ReferenceScreen() {
                                                     >
                                                         {roleHints(
                                                             id,
-                                                            models.data
-                                                                .defaults,
+                                                            models.data.defaults
                                                         ).join(" · ") || "—"}
                                                     </td>
                                                 </tr>

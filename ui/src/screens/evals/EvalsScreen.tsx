@@ -85,7 +85,7 @@ export function EvalsScreen() {
                   chunkSize: String(prefill.chunk_size),
                   chunkOverlap: String(prefill.chunk_overlap),
               }
-            : EMPTY,
+            : EMPTY
     );
     const [localError, setLocalError] = useState<string | null>(null);
 
@@ -356,10 +356,7 @@ export function EvalsScreen() {
             </h5>
             <div className="panel table-wrap">
                 {runs.isError ? (
-                    <QueryError
-                        what="無法列出執行紀錄"
-                        error={runs.error}
-                    />
+                    <QueryError what="無法列出執行紀錄" error={runs.error} />
                 ) : !runs.data ? (
                     <Loading what="評估狀態" />
                 ) : runs.data.length === 0 ? (
@@ -398,10 +395,7 @@ export function EvalsScreen() {
             </div>
             {cancel.error && (
                 <div style={{ marginTop: 14 }}>
-                    <QueryError
-                        what="無法取消該次執行"
-                        error={cancel.error}
-                    />
+                    <QueryError what="無法取消該次執行" error={cancel.error} />
                 </div>
             )}
         </>
@@ -569,9 +563,7 @@ function PickerField({
                 />
             )}
             <span className="choice-summary mono">
-                {selected.length === 0
-                    ? "尚未選取"
-                    : joinNames(selected)}
+                {selected.length === 0 ? "尚未選取" : joinNames(selected)}
             </span>
         </div>
     );

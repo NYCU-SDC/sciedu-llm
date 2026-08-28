@@ -101,7 +101,7 @@ export function PlaygroundScreen() {
 
     const patch = useCallback((id: string, change: (turn: Turn) => Turn) => {
         setTurns((previous) =>
-            previous.map((turn) => (turn.id === id ? change(turn) : turn)),
+            previous.map((turn) => (turn.id === id ? change(turn) : turn))
         );
     }, []);
 
@@ -149,17 +149,17 @@ export function PlaygroundScreen() {
                     patch(assistantId, (turn) =>
                         turn.kind === "assistant"
                             ? { ...turn, events: [...turn.events, event] }
-                            : turn,
+                            : turn
                     );
                 },
-            },
+            }
         )
             .catch((error: unknown) => {
                 if (controller.signal.aborted) {
                     patch(assistantId, (turn) =>
                         turn.kind === "assistant"
                             ? { ...turn, aborted: true }
-                            : turn,
+                            : turn
                     );
                     return;
                 }
@@ -172,13 +172,13 @@ export function PlaygroundScreen() {
                                   detail: errorMessage(error),
                               },
                           }
-                        : turn,
+                        : turn
                 );
             })
             .finally(() => {
                 if (abort.current === controller) abort.current = null;
                 setRunningId((current) =>
-                    current === assistantId ? null : current,
+                    current === assistantId ? null : current
                 );
             });
     };
@@ -302,7 +302,7 @@ export function PlaygroundScreen() {
                                 aborted={turn.aborted}
                                 failure={turn.failure}
                             />
-                        ),
+                        )
                     )}
                     <div ref={foot} />
                 </div>
@@ -473,11 +473,11 @@ function AssistantTurnView({
     const [showInternal, setShowInternal] = useState(false);
     const turn = useMemo(
         () => buildTurn(events, { aborted, failed: failure !== null }),
-        [events, aborted, failure],
+        [events, aborted, failure]
     );
 
     const cast = new Map(
-        turn.cast.map((character) => [character.id, character]),
+        turn.cast.map((character) => [character.id, character])
     );
     // The cast is ordered by the server with the orchestrator first, which is the
     // only signal for who is running the show.
@@ -520,7 +520,7 @@ function AssistantTurnView({
                         activeKey={turn.activeBlockKey}
                         showInternal={showInternal}
                     />
-                ) : null,
+                ) : null
             )}
 
             {turn.error && (
@@ -719,7 +719,7 @@ function PartView({
             <p className="pg-text">
                 {partText(part)}
                 {!part.done && <span className="pg-caret" />}
-            </p>,
+            </p>
         );
     }
 
@@ -731,7 +731,7 @@ function PartView({
                     {!part.done && " — 思考中"}
                 </summary>
                 <p className="pg-aside-body">{partText(part)}</p>
-            </details>,
+            </details>
         );
     }
 
@@ -757,7 +757,7 @@ function PartView({
                 <pre className="pg-code">
                     {partArguments(part) || "（無參數）"}
                 </pre>
-            </details>,
+            </details>
         );
     }
 
@@ -782,6 +782,6 @@ function PartView({
             <pre className="pg-code">
                 {part.content ?? (part.done ? "（無內容）" : "…")}
             </pre>
-        </details>,
+        </details>
     );
 }

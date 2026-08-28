@@ -80,7 +80,7 @@ export function RagScreen() {
 
     const server = useMemo(
         () => (config.data ? toDraft(config.data) : null),
-        [config.data],
+        [config.data]
     );
 
     // The draft is seeded from the server snapshot and only exists once the user
@@ -89,11 +89,11 @@ export function RagScreen() {
     const current = draft ?? server;
     const changes = useMemo(
         () => (server && draft ? diffDraft(server, draft) : []),
-        [server, draft],
+        [server, draft]
     );
     const built = useMemo(
         () => (draft ? buildUpdate(changes, draft) : null),
-        [changes, draft],
+        [changes, draft]
     );
 
     // A build runs on the service, not in this tab, so "busy" is whatever the
@@ -102,7 +102,7 @@ export function RagScreen() {
     const build = config.data?.build ?? null;
     const building = build?.status === "building";
     const stopping = Boolean(
-        building && (build?.cancel_requested || cancelBuild.isPending),
+        building && (build?.cancel_requested || cancelBuild.isPending)
     );
     const starting = apply.isPending || rebuild.isPending || reset.isPending;
     const busy = starting || cancelBuild.isPending || building;
@@ -124,7 +124,7 @@ export function RagScreen() {
         if (!built || built.problems.length > 0) return;
         apply.mutate(
             { ...built.update, rebuild: rebuildsOnApply },
-            { onSuccess: () => setDraft(null) },
+            { onSuccess: () => setDraft(null) }
         );
     };
 
@@ -196,7 +196,7 @@ export function RagScreen() {
     const live = config.data;
     const corpusItems = buildCorpusItems(
         datasets.data?.corpus ?? [],
-        live.corpus_datasets,
+        live.corpus_datasets
     );
     const modelOptions = models.data?.models ?? [];
 
@@ -236,7 +236,7 @@ export function RagScreen() {
                               apply.error ??
                                   rebuild.error ??
                                   reset.error ??
-                                  cancelBuild.error,
+                                  cancelBuild.error
                           )
                         : null
                 }
@@ -339,7 +339,7 @@ export function RagScreen() {
                                                 onChange={(value) =>
                                                     set(
                                                         "embedding_model",
-                                                        value,
+                                                        value
                                                     )
                                                 }
                                             />
@@ -467,13 +467,13 @@ export function RagScreen() {
                                     label="系統提示詞（Langfuse）"
                                     value={current.generator_system_prompt_name}
                                     problem={problemFor(
-                                        "generator_system_prompt_name",
+                                        "generator_system_prompt_name"
                                     )}
                                     disabled={busy}
                                     onChange={(value) =>
                                         set(
                                             "generator_system_prompt_name",
-                                            value,
+                                            value
                                         )
                                     }
                                 />
@@ -481,7 +481,7 @@ export function RagScreen() {
                                     label="使用者提示詞（Langfuse）"
                                     value={current.generator_user_prompt_name}
                                     problem={problemFor(
-                                        "generator_user_prompt_name",
+                                        "generator_user_prompt_name"
                                     )}
                                     disabled={busy}
                                     onChange={(value) =>
@@ -886,7 +886,7 @@ function StatusBanner({
  * part of the live configuration. */
 function buildCorpusItems(
     available: NamedResource[],
-    active: string[],
+    active: string[]
 ): DatasetItem[] {
     const listed = new Map(available.map((entry) => [entry.name, entry.label]));
     const extras = active.filter((name) => !listed.has(name));

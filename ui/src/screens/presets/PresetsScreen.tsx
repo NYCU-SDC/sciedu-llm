@@ -34,7 +34,7 @@ export function PresetsScreen() {
             queryFn: ({ signal }: { signal: AbortSignal }) =>
                 api.get<PresetDetail>(
                     `/admin/presets/${encodeURIComponent(summary.name)}`,
-                    signal,
+                    signal
                 ),
         })),
     });
@@ -183,7 +183,7 @@ function PresetRow({
     const toolCount = document
         ? document.characters.reduce(
               (total, character) => total + character.tools.length,
-              0,
+              0
           )
         : null;
 
