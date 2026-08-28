@@ -533,7 +533,7 @@ export function PresetEditorScreen() {
                         )}
                         <p className="note" style={{ marginTop: 10 }}>
                             <span className="mono">{SUMMON_SUBAGENT}</span>{" "}
-                            只能由協調角色使用， 且必須存在可召喚的第二位角色。
+                            只能由協調角色使用，且必須存在可召喚的第二位角色。
                         </p>
                     </Panel>
 
