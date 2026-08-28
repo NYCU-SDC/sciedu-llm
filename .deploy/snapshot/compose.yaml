@@ -4,6 +4,20 @@ services:
     container_name: sciedu-llm-provider-$VERSION
     networks:
       - traefik
+    restart: unless-stopped
+    # uvicorn opens its listening socket only *after* the app's lifespan has run
+    # — the model allow-list check, the corpus index build, the preset warm — so
+    # "container running" is not "service answering", and traefik routing to it
+    # early means 502s for whoever is watching the deploy. `deploy.sh` waits on
+    # this healthcheck instead. `start_period` covers the index build: failures
+    # inside it leave the container "starting" rather than marking it unhealthy.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 180s
+
     environment:
       HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
@@ -14,6 +28,10 @@ services:
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
       LANGFUSE_TRACING_ENVIRONMENT: "dev"
+      # INFO is what makes a deploy legible: the corpus datasets as they are
+      # collected, embedding progress every few seconds, and the totals when the
+      # index lands. Drop to WARNING for a quiet log.
+      LOG_LEVEL: INFO
 
     labels:
       - "vector.enable=true"
