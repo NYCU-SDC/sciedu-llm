@@ -55,6 +55,9 @@ class RAGPipeline:
         self._chunker: CorpusChunker | None = None
         self._dense: DenseIndex | None = None
         self._bm25: BM25Index | None = None
+        # Corpus datasets the current indexes were built from; retained so the
+        # admin API can rebuild without re-plumbing the dataset names.
+        self._corpus_dataset_names: list[str] = []
 
     async def build(
         self,
@@ -117,6 +120,74 @@ class RAGPipeline:
         self._chunker = chunker
         self._dense = DenseIndex(embeddings)
         self._bm25 = BM25Index([chunk.text for chunk in chunker.chunks])
+        self._corpus_dataset_names = list(corpus_dataset_names)
+
+    @property
+    def is_built(self) -> bool:
+        return (
+            self._chunker is not None
+            and self._dense is not None
+            and self._bm25 is not None
+        )
+
+    @property
+    def corpus_dataset_names(self) -> list[str]:
+        return list(self._corpus_dataset_names)
+
+    def config_snapshot(self) -> dict[str, Any]:
+        """Return the currently effective config values (env defaults + overrides)."""
+        config = self._config
+        return {
+            "embedding_model": self._embedding_model,
+            "rerank_model": self._rerank_model,
+            "embedding_batch_size": self._embedding_batch_size,
+            "max_concurrency": config.max_concurrency,
+            "chunk_size": config.chunk_size,
+            "chunk_overlap": config.chunk_overlap,
+            "generator_system_prompt_name": self._generator_system_prompt_name,
+            "generator_user_prompt_name": self._generator_user_prompt_name,
+            "bm25_top_n": config.bm25_top_n,
+            "dense_top_n": config.dense_top_n,
+            "rrf_k": config.rrf_k,
+            "rerank_pool_size": config.rerank_pool_size,
+            "final_k": config.final_k,
+        }
+
+    def apply_overrides(self, overrides: dict[str, Any]) -> None:
+        """Apply runtime config overrides in place.
+
+        Sets each field on the underlying ``RAGConfig`` (re-validated via
+        ``validate_assignment``) and re-syncs the derived state that ``__init__``
+        caches (the ``Reranker``, embedding/model/prompt attributes). Build-time
+        changes (chunk sizes, embedding model/batch) take effect on the next
+        :meth:`build`/:meth:`rebuild`.
+        """
+        for key, value in overrides.items():
+            setattr(self._config, key, value)
+
+        if "embedding_model" in overrides:
+            self._embedding_model = overrides["embedding_model"]
+        if "embedding_batch_size" in overrides:
+            self._embedding_batch_size = overrides["embedding_batch_size"]
+        if "generator_system_prompt_name" in overrides:
+            self._generator_system_prompt_name = overrides[
+                "generator_system_prompt_name"
+            ]
+        if "generator_user_prompt_name" in overrides:
+            self._generator_user_prompt_name = overrides["generator_user_prompt_name"]
+        if "rerank_model" in overrides:
+            self._rerank_model = overrides["rerank_model"]
+            self._reranker = Reranker(
+                base_url=str(self._openai.base_url),
+                api_key=self._openai.api_key,
+                model=self._rerank_model,
+            )
+
+    async def rebuild(self) -> None:
+        """Rebuild the indexes from the corpus datasets last built from."""
+        if not self._corpus_dataset_names:
+            raise ValueError("No corpus datasets configured to rebuild from.")
+        await self.build(self._corpus_dataset_names)
 
     def resolve_chunks(self, chapter: str, start: int, end: int) -> list[int]:
         chunker = self._require_built()
@@ -126,17 +197,30 @@ class RAGPipeline:
         self,
         *,
         query: str,
-        bm25_top_n: int = 50,
-        dense_top_n: int = 50,
-        rrf_k: int = 60,
-        rerank_pool_size: int = 30,
-        final_k: int = 5,
+        bm25_top_n: int | None = None,
+        dense_top_n: int | None = None,
+        rrf_k: int | None = None,
+        rerank_pool_size: int | None = None,
+        final_k: int | None = None,
     ) -> dict[str, Any]:
         """Run hybrid retrieval + rerank and return the top context for the query.
 
-        Returns a dict with the joined ``context`` string and the ordered
-        ``reference_chunks`` (chunk ids). Emits a ``rag-retrieve`` retriever span.
+        The knob arguments default to ``None`` and are resolved from the (possibly
+        runtime-overridden) ``RAGConfig`` when omitted. Returns a dict with the
+        joined ``context`` string and the ordered ``reference_chunks`` (chunk ids).
+        Emits a ``rag-retrieve`` retriever span.
         """
+        if bm25_top_n is None:
+            bm25_top_n = self._config.bm25_top_n
+        if dense_top_n is None:
+            dense_top_n = self._config.dense_top_n
+        if rrf_k is None:
+            rrf_k = self._config.rrf_k
+        if rerank_pool_size is None:
+            rerank_pool_size = self._config.rerank_pool_size
+        if final_k is None:
+            final_k = self._config.final_k
+
         chunker = self._require_built()
         assert self._dense is not None and self._bm25 is not None
 
@@ -209,13 +293,17 @@ class RAGPipeline:
         *,
         query: str,
         model: str,
-        bm25_top_n: int = 50,
-        dense_top_n: int = 50,
-        rrf_k: int = 60,
-        rerank_pool_size: int = 30,
-        final_k: int = 5,
+        bm25_top_n: int | None = None,
+        dense_top_n: int | None = None,
+        rrf_k: int | None = None,
+        rerank_pool_size: int | None = None,
+        final_k: int | None = None,
     ) -> dict[str, Any]:
-        """Run hybrid retrieval, rerank, and generate an answer for the query."""
+        """Run hybrid retrieval, rerank, and generate an answer for the query.
+
+        The knob arguments default to ``None`` and are resolved from the (possibly
+        runtime-overridden) ``RAGConfig`` inside :meth:`retrieve` when omitted.
+        """
         retrieval = await self.retrieve(
             query=query,
             bm25_top_n=bm25_top_n,

@@ -16,10 +16,12 @@ from typing import Any, Literal
 PartType = Literal["text", "reasoning", "tool_call", "tool_result"]
 ToolResultStatus = Literal["ok", "error"]
 
-# The `agent` id used for the orchestrator. Single-character runs use this for
-# every part, which is what the spec prescribes when there is no cast.
+# The conventional `agent` id for a single-character run, and the default
+# `orchestrator` of a preset. Nothing in the engine keys off it any more — a
+# preset names its own orchestrator — but it stays the id the built-in
+# single-character presets use, which is what the spec prescribes for a run with
+# no cast.
 ORCHESTRATOR_AGENT_ID = "assistant"
-SUBAGENT_AGENT_ID = "subagent"
 
 # Part types whose content arrives incrementally via `delta` events. `part_start`
 # omits the streaming field for these; `part_end` carries the complete value.
@@ -206,9 +208,13 @@ Event = (
 class Character:
     """A role that can speak in a run.
 
-    Only two are built today (orchestrator + subagent, from settings), but the
-    engine is written against this so the spec's client-defined
-    ``workflow.characters`` becomes an additive change.
+    Built from a preset's ``characters`` by ``app.agents.cast.build_cast``; the
+    engine only ever sees this, so which characters exist is a config decision
+    rather than a code one.
+
+    ``max_steps`` is the budget this character gets *when it is summoned*. The
+    orchestrator's budget comes from the preset instead, so its value here is
+    ignored.
     """
 
     id: str
@@ -216,6 +222,7 @@ class Character:
     role: str
     tool_names: tuple[str, ...] = field(default_factory=tuple)
     prompt_name: str | None = None
+    max_steps: int = 3
 
     def info(self) -> CharacterInfo:
         return CharacterInfo(id=self.id, display_name=self.display_name, role=self.role)

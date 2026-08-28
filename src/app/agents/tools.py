@@ -1,11 +1,10 @@
 """The server-side tool registry.
 
 Every tool here is executed by this module — nothing is handed back to the caller
-to run. That is why requests select tools *by name* (`tools: ["rag_search"]`)
-instead of shipping their own function schemas: the schema the model sees has to
-match what we can actually execute, so the server owns it. Spec-shaped
-``{"type": "function", "function": {"name": ...}}`` entries are accepted too and
-resolved by name (see ``app.schema.agents``).
+to run. That is why a preset selects tools *by name* (``tools: ["rag_search"]``)
+instead of shipping function schemas: the schema the model sees has to match what
+we can actually execute, so the server owns it (see ``app.presets``, which
+validates every name against this registry at load time).
 
 Executors are async generators yielding ``Event | ToolOutcome``, ending with
 exactly one ``ToolOutcome``. That shape exists for ``summon_subagent``: a summoned
@@ -24,13 +23,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents import errors
-from app.agents.events import (
-    ORCHESTRATOR_AGENT_ID,
-    SUBAGENT_AGENT_ID,
-    AgentEndEvent,
-    Character,
-    Event,
-)
+from app.agents.events import AgentEndEvent, Character, Event
 from app.agents.ledger import PartLedger
 
 logger = logging.getLogger(__name__)
@@ -74,6 +67,9 @@ class ToolContext:
     tool_call_id: str
     depth: int
     rag_pipeline: Any = None
+    # Who `summon_subagent` reaches. `None` on a summoned character's own
+    # context, which is the structural half of "a subagent may not summon".
+    summon_target_id: str | None = None
 
 
 ToolExecutor = Callable[[ToolContext, Any], AsyncIterator[Event | ToolOutcome]]
@@ -216,16 +212,21 @@ _SUMMON_SUBAGENT_PARAMETERS: dict[str, Any] = {
 }
 
 
-def _compile_subagent_messages(ctx: ToolContext, task: str) -> list[Any]:
-    """Build the subagent's messages from its Langfuse chat prompt.
+def _compile_subagent_messages(
+    ctx: ToolContext, target: Character, task: str
+) -> list[Any]:
+    """Build the summoned character's messages from its Langfuse chat prompt.
 
-    The subagent deliberately does not see the conversation history: it is given
-    one task and answers it, which keeps its context small and makes the summon
-    ``prompt`` argument the single contract between the two characters.
+    The summoned character deliberately does not see the conversation history: it
+    is given one task and answers it, which keeps its context small and makes the
+    summon ``prompt`` argument the single contract between the two characters.
     """
-    subagent = ctx.characters[SUBAGENT_AGENT_ID]
-    prompt_name = subagent.prompt_name or ctx.settings.agents_subagent_prompt_name
-    prompt = ctx.langfuse.get_prompt(prompt_name, type="chat")
+    if not target.prompt_name:
+        # Preset validation requires a prompt_name on every summonable
+        # character, so this only fires on a hand-built cast. The caller turns
+        # it into a recoverable tool error.
+        raise ValueError(f"character '{target.id}' has no prompt_name to compile")
+    prompt = ctx.langfuse.get_prompt(target.prompt_name, type="chat")
     return list(prompt.compile(task=task))
 
 
@@ -245,8 +246,8 @@ async def _run_summon_subagent(
         )
         return
 
-    subagent = ctx.characters.get(SUBAGENT_AGENT_ID)
-    if subagent is None:
+    target = ctx.characters.get(ctx.summon_target_id or "")
+    if target is None:
         yield ToolOutcome(
             status="error",
             code=errors.TOOL_UNAVAILABLE,
@@ -255,7 +256,7 @@ async def _run_summon_subagent(
         return
 
     try:
-        messages = _compile_subagent_messages(ctx, args.prompt)
+        messages = _compile_subagent_messages(ctx, target, args.prompt)
     except Exception:
         logger.exception("failed to compile the subagent prompt")
         yield ToolOutcome(
@@ -270,14 +271,17 @@ async def _run_summon_subagent(
         langfuse=ctx.langfuse,
         settings=ctx.settings,
         ledger=ctx.ledger,
-        character=subagent,
-        tools=resolve_tools(subagent.tool_names),
+        character=target,
+        tools=resolve_tools(target.tool_names),
         model=ctx.model,
         messages=messages,
-        max_steps=ctx.settings.agents_subagent_max_steps,
+        max_steps=target.max_steps,
         depth=ctx.depth + 1,
         rag_pipeline=ctx.rag_pipeline,
         characters=ctx.characters,
+        # Nobody left to summon: the tool is not in a summoned character's list
+        # anyway, and this closes the loop structurally.
+        summon_target_id=None,
         parent=ctx.caller.id,
         summoned_by=ctx.tool_call_id,
         observation_name="subagent",
@@ -296,9 +300,9 @@ async def _run_summon_subagent(
         # as still speaking, hence the explicit agent_end below.
         logger.exception("subagent run failed")
         failed = True
-        yield AgentEndEvent(agent=subagent.id)
+        yield AgentEndEvent(agent=target.id)
 
-    partial = ctx.ledger.visible_text(agent=subagent.id, since=start_index)
+    partial = ctx.ledger.visible_text(agent=target.id, since=start_index)
     if failed:
         yield ToolOutcome(
             status="error",
@@ -363,21 +367,11 @@ def get_tool(name: str) -> ToolSpec | None:
     return _REGISTRY.get(name)
 
 
-def resolve_tools(
-    names: list[str] | tuple[str, ...], *, enable_rag: bool = False
-) -> list[ToolSpec]:
-    """Resolve requested tool names to specs, preserving order and deduping.
-
-    ``enable_rag`` is the legacy sugar from the spec: it registers ``rag_search``
-    with the model free to decide when to search.
-    """
-    requested = list(names)
-    if enable_rag and RAG_SEARCH_TOOL not in requested:
-        requested.append(RAG_SEARCH_TOOL)
-
+def resolve_tools(names: list[str] | tuple[str, ...]) -> list[ToolSpec]:
+    """Resolve tool names to specs, preserving order and deduping."""
     resolved: list[ToolSpec] = []
     seen: set[str] = set()
-    for name in requested:
+    for name in names:
         if name in seen:
             continue
         spec = _REGISTRY.get(name)
@@ -386,28 +380,3 @@ def resolve_tools(
         seen.add(name)
         resolved.append(spec)
     return resolved
-
-
-def build_characters(settings: Any, tool_names: list[str]) -> dict[str, Character]:
-    """Build the cast for a run.
-
-    Only two characters today, from settings. A future ``workflow`` request field
-    replaces this function without touching the engine.
-    """
-    orchestrator = Character(
-        id=ORCHESTRATOR_AGENT_ID,
-        display_name=settings.agents_orchestrator_display_name,
-        role="assistant",
-        tool_names=tuple(tool_names),
-    )
-    characters = {orchestrator.id: orchestrator}
-    if SUMMON_SUBAGENT_TOOL in tool_names:
-        characters[SUBAGENT_AGENT_ID] = Character(
-            id=SUBAGENT_AGENT_ID,
-            display_name=settings.agents_subagent_display_name,
-            role="subagent",
-            # A subagent gets the orchestrator's tools minus the ability to summon.
-            tool_names=tuple(n for n in tool_names if n != SUMMON_SUBAGENT_TOOL),
-            prompt_name=settings.agents_subagent_prompt_name,
-        )
-    return characters

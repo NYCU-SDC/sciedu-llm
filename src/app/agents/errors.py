@@ -35,11 +35,16 @@ DEPTH_EXCEEDED: Final = "depth_exceeded"
 # --- terminal stream error codes -------------------------------------------
 UPSTREAM_ERROR: Final = "upstream_error"
 INTERNAL_ERROR: Final = "internal_error"
+# Forced RAG (``rag_mode: "forced"``) could not produce the grounded prompt the
+# preset is built around. Terminal, because there is no useful run without it —
+# unlike the ``rag_search`` *tool* failing, which the model can work around.
+RAG_FAILED: Final = "rag_failed"
 
 # Kept byte-identical to the /chat streaming error message so both endpoints
 # surface upstream trouble the same way (see src/app/routers/chat.py:276).
 UPSTREAM_ERROR_MESSAGE: Final = "Error while communicating with the OpenAI API"
 INTERNAL_ERROR_MESSAGE: Final = "The agent run failed unexpectedly"
+RAG_FAILED_MESSAGE: Final = "RAG retrieval failed"
 
 
 def _schema_hint(parameters: dict[str, Any]) -> str:

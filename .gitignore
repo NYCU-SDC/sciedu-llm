@@ -1,6 +1,9 @@
 # Corpus & Question Data
 data/*
 !data/scripts
+# Presets and their prompts are configuration, not data: they are the seed
+# source for the presets the service ships with, so they belong in the repo.
+!data/presets
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

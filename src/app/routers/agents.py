@@ -1,26 +1,22 @@
 import contextlib
 import json
 import logging
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from langfuse import propagate_attributes
 
-from app.agents.engine import fold_parts, run_agents
-from app.agents.events import ORCHESTRATOR_AGENT_ID, CastEvent, Event
-from app.agents.tools import (
-    ToolSpec,
-    UnknownToolError,
-    build_characters,
-    resolve_tools,
-)
+from app.agents.engine import fold_parts
+from app.agents.events import CastEvent, Event
+from app.agents.run import PresetRunError, prepare_preset_run, run_preset
 from app.dependencies import (
     langfuse_dependency,
     openai_dependency,
+    preset_registry_dependency,
     rag_pipeline_dependency,
     settings_dependency,
 )
+from app.presets import PresetNotFoundError
 from app.schema.agents import AGENTS_RESPONSES, AgentsRequest, AgentsResponse
 
 router = APIRouter(tags=["Agents"])
@@ -39,11 +35,13 @@ def _sse(event: Event) -> str:
     "/agents",
     summary="Agentic chat completion endpoint",
     description=(
-        "Runs a multi-step agentic loop with server-executed tools (`rag_search`, "
-        "`summon_subagent`). When stream=true, returns Server-Sent Events carrying "
-        "the typed part protocol (`cast`, `agent_start`, `part_start`, `delta`, "
-        "`part_end`, `agent_end`, `done`, `error`); when stream=false, returns the "
-        "same steps folded into a single `parts` array."
+        "Runs a named *preset* — a server-owned run configuration naming the "
+        "model, the cast, each character's tools and the step budget — as a "
+        "multi-step agentic loop with server-executed tools (`rag_search`, "
+        "`summon_subagent`). When stream=true, returns Server-Sent Events "
+        "carrying the typed part protocol (`cast`, `agent_start`, `part_start`, "
+        "`delta`, `part_end`, `agent_end`, `done`, `error`); when stream=false, "
+        "returns the same steps folded into a single `parts` array."
     ),
     responses=AGENTS_RESPONSES,
 )
@@ -53,44 +51,31 @@ async def agents(
     langfuse: langfuse_dependency,
     settings: settings_dependency,
     rag_pipeline: rag_pipeline_dependency,
+    registry: preset_registry_dependency,
 ):
-    model = request.model or settings.openai_default_model
-
-    # Same allow-list semantics as /chat: an empty list means the endpoint is
-    # running unconfigured (e.g. in tests) and no restriction is applied.
-    allowed_models = settings.allowed_model_names
-    if allowed_models and model not in allowed_models:
+    name = request.preset or settings.agents_default_preset
+    try:
+        preset = await registry.get(name)
+    except PresetNotFoundError as e:
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Model '{model}' is not allowed. "
-                f"Allowed models: {', '.join(allowed_models)}."
+                f"Unknown preset '{name}'. Available presets: "
+                f"{', '.join(registry.names())}."
             ),
-        )
-
-    try:
-        tools = resolve_tools(request.tool_names, enable_rag=request.enable_rag)
-    except UnknownToolError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    _validate_tool_choice(request, tools)
+        ) from e
 
     # Unlike /chat — where RAG failures can only surface mid-stream — everything
     # cheap is checked before the first byte, so these stay real HTTP statuses.
-    if rag_pipeline is None:
-        for tool in tools:
-            if tool.requires_rag:
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        f"Tool '{tool.name}' requires RAG, which is not enabled on "
-                        "this server. Configure RAG_CORPUS_DATASETS to enable it."
-                    ),
-                )
-
-    tool_names = [tool.name for tool in tools]
-    characters = build_characters(settings, tool_names)
-    orchestrator = characters[ORCHESTRATOR_AGENT_ID]
+    try:
+        prepared = prepare_preset_run(
+            preset=preset,
+            settings=settings,
+            langfuse=langfuse,
+            rag_pipeline=rag_pipeline,
+        )
+    except PresetRunError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
     # Optional Langfuse trace attributes for grouping/filtering, matching /chat.
     def trace_context():
@@ -102,17 +87,12 @@ async def agents(
         return contextlib.nullcontext()
 
     def events():
-        return run_agents(
+        return run_preset(
+            prepared=prepared,
+            messages=list(request.messages),
             openai=openai,
             langfuse=langfuse,
             settings=settings,
-            characters=characters,
-            orchestrator=orchestrator,
-            tools=tools,
-            model=model,
-            messages=list(request.messages),
-            max_steps=request.max_steps,
-            tool_choice=_openai_tool_choice(request),
             rag_pipeline=rag_pipeline,
         )
 
@@ -141,32 +121,9 @@ async def agents(
     async def stream_response():
         # The trace context is entered inside the generator so the Langfuse
         # observations opened by the engine stay current while the response
-        # streams — the same reason /chat does it here (chat.py:190-194).
+        # streams — the same reason /chat does it here (chat.py).
         with trace_context():
             async for event in events():
                 yield _sse(event)
 
     return StreamingResponse(stream_response(), media_type="text/event-stream")
-
-
-def _validate_tool_choice(request: AgentsRequest, tools: list[ToolSpec]) -> None:
-    named = request.named_tool_choice
-    if named is not None and named not in {tool.name for tool in tools}:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"tool_choice names '{named}', which is not one of this run's tools: "
-                f"{', '.join(tool.name for tool in tools) or '(none)'}."
-            ),
-        )
-    if request.tool_choice == "required" and not tools:
-        raise HTTPException(
-            status_code=400,
-            detail="tool_choice='required' needs at least one tool in `tools`.",
-        )
-
-
-def _openai_tool_choice(request: AgentsRequest) -> Any:
-    if isinstance(request.tool_choice, str):
-        return request.tool_choice
-    return request.tool_choice.model_dump()

@@ -100,6 +100,7 @@ class AgentRunner:
         tool_choice: Any = "auto",
         depth: int = 0,
         rag_pipeline: Any = None,
+        summon_target_id: str | None = None,
         parent: str | None = None,
         summoned_by: str | None = None,
         observation_name: str = "agent",
@@ -118,6 +119,7 @@ class AgentRunner:
         self._tool_choice = tool_choice
         self._depth = depth
         self._rag_pipeline = rag_pipeline
+        self._summon_target_id = summon_target_id
         self._parent = parent
         self._summoned_by = summoned_by
         self._observation_name = observation_name
@@ -647,6 +649,7 @@ class AgentRunner:
             tool_call_id=part.tool_call_id or "",
             depth=self._depth,
             rag_pipeline=self._rag_pipeline,
+            summon_target_id=self._summon_target_id,
         )
         generator = spec.execute(context, args)
         # Characters this tool started but has not finished. If it dies mid-run we
@@ -732,6 +735,7 @@ async def run_agents(
     max_steps: int,
     tool_choice: Any = "auto",
     rag_pipeline: Any = None,
+    summon_target_id: str | None = None,
 ) -> AsyncIterator[Event]:
     """Run one whole answer: ``cast`` → the orchestrator's parts → ``done``.
 
@@ -763,6 +767,7 @@ async def run_agents(
         max_steps=max_steps,
         tool_choice=tool_choice,
         rag_pipeline=rag_pipeline,
+        summon_target_id=summon_target_id,
         observation_name="agents",
     )
 
