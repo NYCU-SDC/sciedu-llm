@@ -2,8 +2,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 
 import { langfuseSessionUrl } from "../../api/client";
-import { errorMessage } from "../../api/errors";
-import { useEvalHistory, useEvalMutations, useEvalRun } from "../../api/hooks";
+import { useEvalMutations, useEvalRun } from "../../api/hooks";
 import type { EvalRun } from "../../api/types";
 import { isTerminal } from "../../api/types";
 import { CopyButton } from "../../components/CopyButton";
