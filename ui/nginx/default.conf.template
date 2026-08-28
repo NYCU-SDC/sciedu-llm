@@ -69,6 +69,28 @@ server {
         try_files $uri =404;
     }
 
+    # index.html names those hashed bundles, so it must never be held: a cached
+    # copy pins a whole deploy. Without an explicit Cache-Control a browser
+    # applies heuristic freshness and a CDN its own default TTL, so a redeploy
+    # can go unseen for hours. `no-cache` means "always revalidate", not "never
+    # store" — the usual answer is a cheap 304 against the ETag.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # Unhashed files served from the root — the favicon above all. They keep the
+    # same name across deploys, which is exactly what makes them stick: a
+    # browser (and Cloudflare, which caches .svg by default) will happily serve
+    # last week's icon. Same `no-cache` revalidation as index.html.
+    #
+    # `try_files $uri =404` also stops the SPA fallback from answering a missing
+    # icon with index.html and a 200 — an HTML body served as an image, which
+    # looks identical to "the favicon did not update".
+    location ~* ^/[^/]+\.(svg|png|ico|webmanifest|xml|txt)$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
     # SPA fallback: every route renders index.html.
     location / {
         try_files $uri /index.html;
