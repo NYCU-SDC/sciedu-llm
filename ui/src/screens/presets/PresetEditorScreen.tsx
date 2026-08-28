@@ -219,7 +219,7 @@ export function PresetEditorScreen() {
             {localProblems !== null && localProblems.length > 0 && (
                 <div style={{ marginTop: 20 }}>
                     <ErrorPanel
-                        title={`This document is not the right shape — ${localProblems.length} problem${localProblems.length === 1 ? "" : "s"}`}
+                        title={`文件格式不正確 — ${localProblems.length} 個問題`}
                     >
                         <div className="alarm-list">
                             {localProblems.map((problem) => (
@@ -233,8 +233,7 @@ export function PresetEditorScreen() {
                             ))}
                         </div>
                         <p className="alarm-body">
-                            Checked here in the browser. The service runs the
-                            full validation when you save.
+                            已在瀏覽器中檢查；儲存時服務會執行完整驗證。
                         </p>
                     </ErrorPanel>
                 </div>
@@ -260,8 +259,8 @@ export function PresetEditorScreen() {
                                 label="預設值名稱"
                                 hint={
                                     renamed
-                                        ? `Saving under a new name creates a second preset; '${detail?.name}' stays as it is.`
-                                        : 'Lowercase letters, digits, "-" and "_".'
+                                        ? `以新的名稱另存新檔；'${detail?.name}' 將不被更動`
+                                        : '小寫字母、數字、"_"與"-"'
                                 }
                             >
                                 {(id) => (
@@ -326,9 +325,7 @@ export function PresetEditorScreen() {
 
                     <Panel title="角色群">
                         <p className="note" style={{ marginBottom: 14 }}>
-                            One assistant answers by default. You can add a
-                            second character the first one may call in when it
-                            needs a different voice.
+                            預設由一位助理回答。需要不同觀點時，可新增第二位供第一位角色召喚。
                         </p>
                         <div
                             style={{
@@ -367,7 +364,7 @@ export function PresetEditorScreen() {
                                         strokeWidth={2.75}
                                         aria-hidden
                                     />
-                                    Add a summonable character
+                                    新增可召喚角色
                                 </button>
                             )}
                         </div>
@@ -404,7 +401,7 @@ export function PresetEditorScreen() {
                         <div className="grid-2">
                             <Field
                                 label="每次回覆的最大步數"
-                                hint={`How many times it may use a tool before it must answer. At most ${MAX_STEPS_CAP}.`}
+                                hint={`在回答前最多能使用 ${MAX_STEPS_CAP} 次工具。`}
                             >
                                 {(id) => (
                                     <input
@@ -490,11 +487,11 @@ export function PresetEditorScreen() {
                                         className="note"
                                         style={{ maxWidth: "38ch" }}
                                     >
-                                        Deleting brings the built-in{" "}
+                                        刪除後，內建的{" "}
                                         <span className="mono">
                                             {detail.name}
                                         </span>{" "}
-                                        back.
+                                        將恢復使用。
                                     </p>
                                 )}
                             </>
@@ -535,9 +532,8 @@ export function PresetEditorScreen() {
                             </div>
                         )}
                         <p className="note" style={{ marginTop: 10 }}>
-                            <span className="mono">{SUMMON_SUBAGENT}</span> only
-                            works on the orchestrator, and only when there is a
-                            second character to summon.
+                            <span className="mono">{SUMMON_SUBAGENT}</span> 只能由協調角色使用，
+                            且必須存在可召喚的第二位角色。
                         </p>
                     </Panel>
 
@@ -550,8 +546,7 @@ export function PresetEditorScreen() {
                             <Loading what="模型" />
                         ) : allowed.length === 0 ? (
                             <p className="note">
-                                No allowlist is configured, so any model the
-                                upstream server advertises may be used.
+                                尚未設定允許清單，因此可使用上游伺服器提供的任何模型。
                             </p>
                         ) : (
                             allowed.map((model) => (
@@ -586,20 +581,18 @@ export function PresetEditorScreen() {
 
             {confirmDelete && detail && (
                 <ConfirmDialog
-                    title={`Delete '${detail.name}'?`}
+                    title={`要刪除「${detail.name}」嗎？`}
                     danger
                     body={
                         detail.shadowed_builtin ? (
                             <>
-                                The Langfuse item is removed and the built-in{" "}
+                                Langfuse 項目將被移除，內建的{" "}
                                 <span className="mono">{detail.name}</span> goes
-                                back into service.
+                                將恢復使用。
                             </>
                         ) : (
                             <>
-                                The Langfuse item is removed and the preset
-                                stops being served. Anything calling it by name
-                                will get an error.
+                                Langfuse 項目將被移除，且此預設值將停止提供服務。任何以名稱呼叫它的地方都會收到錯誤。
                             </>
                         )
                     }
@@ -636,7 +629,7 @@ function StoredIn({
     if (isNew) {
         return (
             <span style={{ fontSize: 13 }}>
-                Not saved yet · saving writes it to the Langfuse dataset{" "}
+                尚未儲存 · 儲存時會寫入 Langfuse 資料集{" "}
                 <span className="mono">config/presets</span>
             </span>
         );
@@ -645,15 +638,14 @@ function StoredIn({
     if (detail.builtin && !detail.shadowed_builtin) {
         return (
             <span style={{ fontSize: 13 }}>
-                Built into the service · saving stores a Langfuse copy that
-                shadows it, and the built-in stays available underneath
+                內建於服務中 · 儲存後會建立覆寫它的 Langfuse 副本，內建版本仍會保留
             </span>
         );
     }
     if (detail.builtin) {
         return (
             <span style={{ fontSize: 13 }}>
-                Stored in Langfuse · shadows the built-in{" "}
+                儲存於 Langfuse · 覆寫內建預設值{" "}
                 <span className="mono">{detail.name}</span>
             </span>
         );
@@ -686,7 +678,7 @@ function CharacterCard({
                     className="mono"
                     style={{ fontSize: 13, fontWeight: 600 }}
                 >
-                    {character.id || "(no id)"}
+                    {character.id || "（沒有 ID）"}
                 </span>
                 {onRemove && (
                     <button
@@ -743,7 +735,7 @@ function CharacterCard({
                     hint={
                         isOrchestrator
                             ? undefined
-                            : "A summoned character needs a prompt of its own."
+                            : "被召喚的角色必須有自己的提示詞。"
                     }
                 >
                     {(id) => (
