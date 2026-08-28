@@ -3,7 +3,7 @@ requires = ["uv_build>=0.11.7,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["app", "rag", "judge", "eval_ui"]
+module-name = ["app", "rag", "judge"]
 module-root = "src"
 
 [project]
@@ -14,7 +14,6 @@ requires-python = ">=3.13"
 dependencies = [
     "faiss-cpu>=1.13.2",
     "fastapi>=0.128.0",
-    "gradio>=5.0.0",
     "httpx>=0.28.1",
     "jieba>=0.42.1",
     "langchain-community>=0.4.1",
@@ -41,9 +40,31 @@ dev = [
     "ruff>=0.14.11",
 ]
 
+[tool.pytest.ini_options]
+# `live` tests talk to a real Langfuse project, so they are opt-in: the default
+# run (including `poe test`) deselects them, and `pytest -m live tests/live`
+# overrides this to select only them. Everything else is unmarked and runs
+# either way.
+addopts = "-m \"not live\""
+markers = [
+    "integration: exercises the assembled app over a real socket (still hermetic and fast)",
+    "live: requires real Langfuse credentials and writes to that project; opt in with `-m live`",
+]
+
 [tool.poe.tasks]
-dev = "uv run uvicorn app.main:app --reload --port 8080"
-ui = "uv run python -m eval_ui.main"
+dev-api = "uv run uvicorn app.main:app --reload --port 8080"
+dev-ui = { cmd = "pnpm dev", cwd = "ui" }
 lint = "uv run ruff check"
 format = "uv run ruff format"
 test = "uv run pytest"
+
+# Backend (:8080) and admin console (:5173) together; stops both when either
+# exits or on Ctrl-C. The console needs `pnpm install` in ui/ once beforehand.
+[tool.poe.tasks.dev]
+interpreter = "bash"
+shell = """
+trap 'kill 0 2>/dev/null' EXIT
+uv run uvicorn app.main:app --reload --port 8080 &
+( cd ui && exec pnpm dev ) &
+wait -n
+"""

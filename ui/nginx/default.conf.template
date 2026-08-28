@@ -1,0 +1,98 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Every proxy_pass below goes through this variable, which is what lets
+    # BACKEND_URL name a service that is not up yet: with a literal upstream,
+    # nginx resolves the host once at startup and *exits* if it cannot ("host
+    # not found in upstream"), so a compose stack starting both containers
+    # together would crash-loop the console until the backend won the race. Via
+    # a variable the name is resolved per request through the resolver below,
+    # which also means a backend container recreated on a new IP is picked up
+    # within `valid=` rather than at the next nginx restart.
+    #
+    # 127.0.0.11 is Docker's embedded DNS. Override DNS_RESOLVER when running
+    # somewhere that is not Docker (e.g. a cluster's own DNS service address).
+    resolver ${DNS_RESOLVER} valid=10s ipv6=off;
+    set $backend "${BACKEND_URL}";
+
+    # The /admin API lives on the backend service. No trailing slash on
+    # proxy_pass: the original URI (/admin/...) is forwarded as-is.
+    #
+    # BACKEND_URL must name the *API*, never this console: pointed at itself (or
+    # at a gateway hostname that routes back here) the SPA fallback below answers
+    # /admin with index.html and a 200, and the console is handed HTML where it
+    # expects JSON. The client rejects that explicitly — see `request()` in
+    # src/api/client.ts — rather than letting it fail somewhere further in.
+    location /admin/ {
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Every /admin call answers promptly — an index rebuild is scheduled on
+        # the service and polled, not awaited — so the stock timeouts apply.
+    }
+
+    # /agents is not under /admin, so it needs a block of its own — and it is a
+    # Server-Sent Events stream, which nginx would otherwise buffer and hand
+    # over in one lump once the run finished. The playground reads it token by
+    # token, so buffering and caching are off and the read timeout outlasts a
+    # long agentic run.
+    location /agents {
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    # The top bar's backend indicator polls this every few seconds. An exact
+    # match, so the SPA fallback below keeps every other route.
+    location = /healthz {
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Hashed build assets never change — cache them hard.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # index.html names those hashed bundles, so it must never be held: a cached
+    # copy pins a whole deploy. Without an explicit Cache-Control a browser
+    # applies heuristic freshness and a CDN its own default TTL, so a redeploy
+    # can go unseen for hours. `no-cache` means "always revalidate", not "never
+    # store" — the usual answer is a cheap 304 against the ETag.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+
+    # Unhashed files served from the root — the favicon above all. They keep the
+    # same name across deploys, which is exactly what makes them stick: a
+    # browser (and Cloudflare, which caches .svg by default) will happily serve
+    # last week's icon. Same `no-cache` revalidation as index.html.
+    #
+    # `try_files $uri =404` also stops the SPA fallback from answering a missing
+    # icon with index.html and a 200 — an HTML body served as an image, which
+    # looks identical to "the favicon did not update".
+    location ~* ^/[^/]+\.(svg|png|ico|webmanifest|xml|txt)$ {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # SPA fallback: every route renders index.html.
+    location / {
+        try_files $uri /index.html;
+    }
+}

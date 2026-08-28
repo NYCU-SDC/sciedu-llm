@@ -1,5 +1,10 @@
+# Backend service image: the single FastAPI app (LLM endpoints, tool execution,
+# judge runs, /admin API). The admin console frontend builds separately from
+# ui/Dockerfile. The build context is trimmed by .dockerignore — in particular
+# `.env` never enters the image; all runtime configuration comes from the
+# environment (see example.env for the required/optional variables).
 FROM python:3.13-slim-bookworm
-#
+
 # Install curl and certificates as UV depends on these
 RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates
 

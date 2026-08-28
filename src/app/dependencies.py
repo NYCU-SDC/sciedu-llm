@@ -1,4 +1,6 @@
+import asyncio
 import logging
+import weakref
 from functools import cache
 from typing import Annotated
 
@@ -8,8 +10,14 @@ from openai import AsyncOpenAI
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app import listings
+from app.presets import PresetRegistry
+from app.rag_builds import RagBuildManager
+from judge import EvalRunner
 from observability import init_langfuse_client
 from rag import RAGPipeline
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -26,14 +34,48 @@ class Settings(BaseSettings):
     chat_title_prompt_name: str = "app/chat-title-generator"
     chat_title_max_attempts: int = 3
 
+    # Agentic (/agents) config. Who may speak, what they may call and how many
+    # steps they get is no longer configured here — it lives in a *preset* (see
+    # `app.presets`), so a new behaviour is a config change rather than a deploy.
+    #
+    # How long a single tool may go without producing anything before it is
+    # abandoned and reported to the model as a timeout.
+    agents_tool_timeout_seconds: float = 60.0
+
+    # Langfuse dataset holding the preset documents. Each item's `input` is one
+    # preset; entries shadow the code-defined defaults of the same name. The
+    # defaults are seeded into it at startup when missing, and a missing or
+    # broken dataset is survivable — the code defaults stay in service.
+    presets_dataset_name: str = "config/presets"
+    # How long a loaded preset map is served before the dataset is re-read.
+    presets_cache_ttl_seconds: float = 300.0
+    # The preset /agents runs when the request omits `preset`.
+    agents_default_preset: str = "default-agents"
+    # The presets /chat is implemented on top of: `enable_rag` picks between them.
+    chat_preset_name: str = "default-chat-plain"
+    chat_rag_preset_name: str = "default-chat"
+
     # Comma-separated Langfuse corpus dataset names to index for RAG-enabled chat.
-    # Read from RAG_CORPUS_DATASETS. Leave empty to disable RAG (the /chat
-    # `enable_rag` flag then returns 503 until at least one dataset is configured).
+    # Read from RAG_CORPUS_DATASETS. Optional: when empty, every dataset under
+    # the corpus folder is discovered from Langfuse at startup instead (see
+    # `build_rag_pipeline`). RAG is disabled only when neither yields a dataset.
     rag_corpus_datasets: str = ""
+
+    # How far back `GET /admin/evals/history` looks. Not a preference: Langfuse's
+    # experiments endpoint requires a `fromStartTime`, so a history listing is
+    # always a window, and this is how wide.
+    evals_history_lookback_days: int = 90
+
+    # Langfuse dataset folders the /admin listing endpoints filter on. A dataset
+    # named "corpus/ver3/biology" is a corpus dataset; "questions/biology" is a
+    # question dataset. Folders are a Langfuse naming convention, not an API
+    # concept, so the prefixes are configuration rather than constants.
+    corpus_dataset_folder: str = "corpus"
+    questions_dataset_folder: str = "questions"
 
     # Load env variables from .env for development, CI/CD deployments should rely on automated injection
     # Note that env variables always take precedence over values in .env.
-    # `extra="ignore"` because .env is shared with other modules (langfuse/rag/judge/eval_ui).
+    # `extra="ignore"` because .env is shared with other modules (langfuse/rag/judge).
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     @property
@@ -56,13 +98,53 @@ def get_settings():
 settings_dependency = Annotated[Settings, Depends(get_settings)]
 
 
-@cache
-def get_openai_client():
+#: One `AsyncOpenAI` per event loop, held weakly so a loop that goes away takes
+#: its client (and its connection pool) with it. See `get_openai_client`.
+_openai_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncOpenAI]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _build_openai_client() -> AsyncOpenAI:
     settings = get_settings()
-    client = AsyncOpenAI(
+    return AsyncOpenAI(
         base_url=settings.openai_base_url,
         api_key=settings.openai_api_key,
     )
+
+
+async def get_openai_client() -> AsyncOpenAI:
+    """The `AsyncOpenAI` client belonging to the running event loop.
+
+    Deliberately **not** a single process-wide client. httpx keeps a connection
+    pool whose primitives (the per-connection read `Event`, the pool lock) bind
+    to the loop that first used them, so a client shared across two loops fails
+    on the second with
+
+        RuntimeError: <asyncio.locks.Event ...> is bound to a different event loop
+
+    surfacing as an `openai.APIConnectionError` — a "connection error" that has
+    nothing to do with the network and does not clear up on retry, because the
+    poisoned connection stays in the pool. Two loops in one process is not
+    exotic: Starlette's `TestClient` opens a fresh portal (and loop) per request
+    unless it is used as a context manager, `pytest-asyncio` gives every test its
+    own, and `tests/app/stack_integration_test.py` serves the app from a worker
+    thread. One client per loop makes the failure structurally impossible.
+
+    This is `async` so that FastAPI resolves it on the event loop; a sync
+    dependency is run in a worker thread, where there is no running loop to key
+    on. Callers outside a request must await it from async code too.
+
+    Objects that *hold* a client rather than asking for one each time (the eval
+    runner, a `RAGPipeline`) capture the loop they were built on — which is the
+    app's loop, since both are built in the lifespan.
+    """
+    loop = asyncio.get_running_loop()
+    client = _openai_clients.get(loop)
+    if client is None:
+        client = _build_openai_client()
+        _openai_clients[loop] = client
+        logger.debug("Built an AsyncOpenAI client for event loop %r", loop)
     return client
 
 
@@ -94,8 +176,7 @@ async def validate_allowed_models() -> list[str]:
             "list of model ids the /chat endpoint is permitted to serve."
         )
 
-    logger = logging.getLogger(__name__)
-    client = get_openai_client()
+    client = await get_openai_client()
     try:
         served = {model.id async for model in client.models.list()}
     except Exception:
@@ -118,19 +199,54 @@ async def validate_allowed_models() -> list[str]:
 
 
 async def build_rag_pipeline() -> RAGPipeline | None:
-    """Build the RAG pipeline from the configured corpus datasets at startup.
+    """Build the RAG pipeline from the corpus datasets at startup.
 
-    Returns ``None`` when no corpus datasets are configured, leaving RAG disabled.
+    ``RAG_CORPUS_DATASETS`` pins the set when it is configured. When it is not,
+    every dataset under the corpus folder is discovered from Langfuse, so a
+    deployment that has seeded a corpus gets retrieval without a second place to
+    keep the list in sync. Returns ``None`` — RAG disabled — when neither yields
+    a dataset, including when discovery itself fails: an unreachable Langfuse
+    must leave the server up and answering ``enable_rag`` requests with the
+    documented 503, not stuck at boot.
+
     Called once from the app lifespan; the built pipeline is stashed on
     ``app.state`` and served via ``get_rag_pipeline``.
     """
     settings = get_settings()
-    names = settings.rag_corpus_dataset_names
+    names = settings.rag_corpus_dataset_names or await _discover_corpus_datasets(
+        settings
+    )
     if not names:
         return None
-    pipeline = RAGPipeline(get_openai_client(), get_langfuse_client())
+    pipeline = RAGPipeline(await get_openai_client(), get_langfuse_client())
     await pipeline.build(names)
     return pipeline
+
+
+async def _discover_corpus_datasets(settings: Settings) -> list[str]:
+    """Every Langfuse dataset under the corpus folder, or ``[]`` if none/failed."""
+    try:
+        corpus, _questions = await listings.list_dataset_names(
+            get_langfuse_client(),
+            corpus_folder=settings.corpus_dataset_folder,
+            questions_folder=settings.questions_dataset_folder,
+        )
+    except Exception:
+        logger.warning(
+            "Could not list Langfuse datasets to discover a RAG corpus; RAG stays "
+            "disabled. Set RAG_CORPUS_DATASETS to configure it explicitly.",
+            exc_info=True,
+        )
+        return []
+    names = [name for _label, name in corpus]
+    if names:
+        logger.info(
+            "Discovered %d corpus dataset(s) under '%s/': %s",
+            len(names),
+            settings.corpus_dataset_folder,
+            ", ".join(names),
+        )
+    return names
 
 
 def get_rag_pipeline(request: Request) -> RAGPipeline | None:
@@ -138,3 +254,59 @@ def get_rag_pipeline(request: Request) -> RAGPipeline | None:
 
 
 rag_pipeline_dependency = Annotated[RAGPipeline | None, Depends(get_rag_pipeline)]
+
+
+def get_rag_build_manager(
+    request: Request, rag_pipeline: rag_pipeline_dependency
+) -> RagBuildManager | None:
+    """Serve the process-wide index-build manager, or ``None`` when RAG is off.
+
+    Reached through ``rag_pipeline_dependency`` rather than ``app.state`` so a
+    test (or the fake stack) that overrides the pipeline gets a manager wrapping
+    *that* pipeline. The lifespan warms one up; the lazy branch covers an app
+    started without it, and re-wraps if the pipeline underneath was replaced.
+    """
+    if rag_pipeline is None:
+        return None
+    manager = getattr(request.app.state, "rag_build_manager", None)
+    if manager is None or manager.pipeline is not rag_pipeline:
+        manager = RagBuildManager(rag_pipeline)
+        request.app.state.rag_build_manager = manager
+    return manager
+
+
+rag_build_manager_dependency = Annotated[
+    RagBuildManager | None, Depends(get_rag_build_manager)
+]
+
+
+def get_preset_registry(
+    request: Request, langfuse: langfuse_dependency, settings: settings_dependency
+) -> PresetRegistry:
+    """Serve the process-wide preset registry, building it on first use.
+
+    The lifespan normally warms one up so the dataset is already loaded before
+    the first request; the lazy branch is what keeps tests (and any app started
+    without the lifespan) working — construction never touches the network and
+    the builtins are in service immediately.
+    """
+    registry = getattr(request.app.state, "preset_registry", None)
+    if registry is None:
+        registry = PresetRegistry(langfuse=langfuse, settings=settings)
+        request.app.state.preset_registry = registry
+    return registry
+
+
+preset_registry_dependency = Annotated[PresetRegistry, Depends(get_preset_registry)]
+
+
+def get_eval_runner(request: Request) -> EvalRunner:
+    """Serve the process-wide eval runner stashed on ``app.state`` at startup.
+
+    Unlike the RAG pipeline this is never ``None`` — the runner is cheap to
+    construct and holds no upstream state until a run is actually started.
+    """
+    return request.app.state.eval_runner
+
+
+eval_runner_dependency = Annotated[EvalRunner, Depends(get_eval_runner)]

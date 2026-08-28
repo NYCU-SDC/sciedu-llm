@@ -1,6 +1,10 @@
 # Corpus & Question Data
 data/*
 !data/scripts
+local-docs/*
+# Presets and their prompts are configuration, not data: they are the seed
+# source for the presets the service ships with, so they belong in the repo.
+!data/presets
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -18,8 +22,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/

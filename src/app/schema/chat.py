@@ -16,7 +16,18 @@ class ChatRequest(BaseModel):
             "(OPENAI_DEFAULT_MODEL) is used."
         ),
     )
-    enable_rag: bool = False
+    enable_rag: bool = Field(
+        default=False,
+        description=(
+            "Let the model search the textbook corpus while it answers. It is "
+            "offered a retrieval tool and decides whether to use it, so the "
+            "conversation is sent upstream unmodified and a question that needs "
+            "no textbook costs no retrieval. Tool calls never reach the client: "
+            "the response is the answer's text, in the same frames as always. "
+            "Requires RAG to be configured on the server (503 otherwise) and a "
+            "user message with text content (422 otherwise)."
+        ),
+    )
     session: Optional[str] = Field(
         default=None,
         description=(

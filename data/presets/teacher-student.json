@@ -1,0 +1,32 @@
+{
+  "name": "teacher-student",
+  "description": "A teacher who can search the textbook and summon a student to answer first, then correct and extend the student's answer.",
+  "model": null,
+  "max_steps": 8,
+  "tool_choice": "auto",
+  "rag_mode": "off",
+  "orchestrator": "teacher",
+  "characters": [
+    {
+      "id": "teacher",
+      "display_name": "老師",
+      "role": "teacher",
+      "prompt_name": "agents/teacher-system",
+      "tools": [
+        "rag_search",
+        "summon_subagent"
+      ],
+      "max_steps": 3
+    },
+    {
+      "id": "student",
+      "display_name": "學生",
+      "role": "student",
+      "prompt_name": "agents/student",
+      "tools": [
+        "rag_search"
+      ],
+      "max_steps": 3
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+#!/bin/sh
+# Rewrite a loopback hostname in BACKEND_URL to its literal address.
+#
+# Sourced by the nginx entrypoint (hence .envsh, hence the export) before
+# 20-envsubst-on-templates.sh bakes the value into the rendered config.
+#
+# Why this is needed: every proxy_pass in default.conf.template goes through a
+# variable, so that BACKEND_URL may name a compose service that is not up yet
+# (see the comment there). That path resolves names through nginx's `resolver`,
+# which consults DNS *only* — never /etc/hosts — and Docker's embedded DNS does
+# not serve `localhost`. So a literal "localhost" would fail every single request
+# with "localhost could not be resolved", even though the address is right there
+# in /etc/hosts. An IP literal needs no resolver at all.
+#
+# Normalising here keeps both spellings working: `localhost` for a backend that
+# shares this container's network namespace (same pod, `--network container:`,
+# host networking), and service names for compose.
+#
+# Note that in a compose stack where the console and the API are separate
+# services, no form of loopback can work — inside this container that address is
+# nginx itself. Point BACKEND_URL at the backend's service name instead.
+
+# The image's own 15-local-resolvers.envsh (enabled by
+# NGINX_ENTRYPOINT_LOCAL_RESOLVERS in the Dockerfile, and sourced just before
+# this file) has read the container's nameservers out of /etc/resolv.conf: that
+# is 127.0.0.11 under Docker and compose, the cluster DNS under Kubernetes. Using
+# it means the resolver needs no per-environment configuration, while
+# DNS_RESOLVER stays an override for anywhere resolv.conf is not the answer.
+#
+# Both files are *sourced*, and the one before this sets `set -eu`, which is why
+# every expansion here carries a default.
+if [ -z "${DNS_RESOLVER:-}" ]; then
+    DNS_RESOLVER="${NGINX_LOCAL_RESOLVERS:-127.0.0.11}"
+    export DNS_RESOLVER
+    echo "$0: resolving BACKEND_URL via $DNS_RESOLVER"
+fi
+
+case "${BACKEND_URL:-}" in
+    *//localhost | *//localhost:* | *//localhost/*)
+        BACKEND_URL=$(printf '%s' "$BACKEND_URL" | sed 's#//localhost#//127.0.0.1#')
+        export BACKEND_URL
+        echo "$0: BACKEND_URL names localhost, which nginx's resolver cannot see;" \
+            "using $BACKEND_URL instead"
+        ;;
+esac

@@ -1,23 +1,21 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.env
+# Backend image build context (root Dockerfile). The image ships the Python
+# service only — the admin console has its own image (ui/Dockerfile).
+.git
 .venv
-venv/
+.env
+__pycache__
+**/__pycache__
+.pytest_cache
+.ruff_cache
 
-.git/
-.vscode/
-.zed/
-.ruff_cache/
-.pytest_cache/
-
-Dockerfile
-.dockerignore
-
-tests/
-docs/
-README.md
-
-.github/
-.deploy/
+# Not part of the runtime service
+ui
+ui-mockup
+*.zip
+tests
+docs
+data
+scripts
+.deploy
+.github
+.claude
