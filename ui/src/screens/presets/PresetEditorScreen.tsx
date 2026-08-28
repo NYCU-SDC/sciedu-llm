@@ -532,8 +532,8 @@ export function PresetEditorScreen() {
                             </div>
                         )}
                         <p className="note" style={{ marginTop: 10 }}>
-                            <span className="mono">{SUMMON_SUBAGENT}</span> 只能由協調角色使用，
-                            且必須存在可召喚的第二位角色。
+                            <span className="mono">{SUMMON_SUBAGENT}</span>{" "}
+                            只能由協調角色使用， 且必須存在可召喚的第二位角色。
                         </p>
                     </Panel>
 
@@ -592,7 +592,8 @@ export function PresetEditorScreen() {
                             </>
                         ) : (
                             <>
-                                Langfuse 項目將被移除，且此預設值將停止提供服務。任何以名稱呼叫它的地方都會收到錯誤。
+                                Langfuse
+                                項目將被移除，且此預設值將停止提供服務。任何以名稱呼叫它的地方都會收到錯誤。
                             </>
                         )
                     }
@@ -638,7 +639,8 @@ function StoredIn({
     if (detail.builtin && !detail.shadowed_builtin) {
         return (
             <span style={{ fontSize: 13 }}>
-                內建於服務中 · 儲存後會建立覆寫它的 Langfuse 副本，內建版本仍會保留
+                內建於服務中 · 儲存後會建立覆寫它的 Langfuse
+                副本，內建版本仍會保留
             </span>
         );
     }
