@@ -1,0 +1,19 @@
+{
+  "name": "default-chat-plain",
+  "description": "Plain single-turn assistant. No tools, no retrieval. What /chat runs for `enable_rag: false`.",
+  "model": null,
+  "max_steps": 1,
+  "tool_choice": "auto",
+  "rag_mode": "off",
+  "orchestrator": "assistant",
+  "characters": [
+    {
+      "id": "assistant",
+      "display_name": "助教",
+      "role": "assistant",
+      "prompt_name": null,
+      "tools": [],
+      "max_steps": 3
+    }
+  ]
+}

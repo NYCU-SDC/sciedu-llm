@@ -13,6 +13,7 @@ import type { EvalRun, EvalRunCreate, NamedResource } from '../../api/types'
 import { isTerminal } from '../../api/types'
 import { CheckList, type Choice } from '../../components/Choices'
 import { QueryError } from '../../components/ErrorPanel'
+import { FolderDatasetPicker } from '../../components/FolderDatasetPicker'
 import { Field, Panel } from '../../components/Panel'
 import { Loading, PageHeader } from '../../components/States'
 import { RunStatusTag } from '../../components/StatusTag'
@@ -103,7 +104,7 @@ export function EvalsScreen() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((previous) => ({ ...previous, [key]: value }))
 
-  const toggle = (key: 'corpus' | 'questions' | 'prompts') =>
+  const toggle = (key: 'prompts') =>
     (value: string, next: boolean) => {
       setForm((previous) => {
         const chosen = new Set(previous[key])
@@ -168,7 +169,10 @@ export function EvalsScreen() {
       />
 
       <Panel title="Start a run" style={{ marginTop: 20 }}>
-        <div className="grid-3">
+        {/* Three rows of two, read left to right: who answers and who scores,
+            what they read and what they are asked, then how much of it each
+            question gets and what the scoring is judged against. */}
+        <div className="pair" style={{ rowGap: 20 }}>
           <Field label="Model being tested">
             {(id) => (
               <ModelSelect
@@ -189,7 +193,30 @@ export function EvalsScreen() {
               />
             )}
           </Field>
-          <Field label="Passages per question (k)" hint="Between 1 and 20.">
+
+          <DatasetField
+            label="Course material"
+            resources={datasets.data?.corpus}
+            loading={!datasets.data}
+            error={datasets.isError ? datasets.error : null}
+            empty="No datasets under the corpus folder."
+            selected={form.corpus}
+            onChange={(next) => set('corpus', next)}
+          />
+          <DatasetField
+            label="Question sets"
+            resources={datasets.data?.questions}
+            loading={!datasets.data}
+            error={datasets.isError ? datasets.error : null}
+            empty="No datasets under the questions folder."
+            selected={form.questions}
+            onChange={(next) => set('questions', next)}
+          />
+
+          <Field
+            label="Passages per question (k)"
+            hint="How many passages each question is answered from. Between 1 and 20."
+          >
             {(id) => (
               <input
                 id={id}
@@ -200,35 +227,6 @@ export function EvalsScreen() {
               />
             )}
           </Field>
-        </div>
-
-        {models.isError && (
-          <div style={{ marginTop: 14 }}>
-            <QueryError what="Could not list the models" error={models.error} />
-          </div>
-        )}
-
-        <div className="grid-3" style={{ marginTop: 14 }}>
-          <PickerField
-            label="Course material"
-            resources={datasets.data?.corpus}
-            loading={!datasets.data}
-            error={datasets.isError ? datasets.error : null}
-            errorWhat="Could not list the Langfuse datasets"
-            empty="No datasets under the corpus folder."
-            selected={form.corpus}
-            onToggle={toggle('corpus')}
-          />
-          <PickerField
-            label="Question sets"
-            resources={datasets.data?.questions}
-            loading={!datasets.data}
-            error={datasets.isError ? datasets.error : null}
-            errorWhat="Could not list the Langfuse datasets"
-            empty="No datasets under the questions folder."
-            selected={form.questions}
-            onToggle={toggle('questions')}
-          />
           <PickerField
             label="Scoring prompts"
             resources={prompts.data}
@@ -241,7 +239,13 @@ export function EvalsScreen() {
           />
         </div>
 
-        <details style={{ marginTop: 14 }}>
+        {models.isError && (
+          <div style={{ marginTop: 14 }}>
+            <QueryError what="Could not list the models" error={models.error} />
+          </div>
+        )}
+
+        <details style={{ marginTop: 16 }}>
           <summary>Retrieval settings for this run (otherwise it uses the live ones)</summary>
           <div className="grid-4" style={{ marginTop: 12 }}>
             <Field label="Embedding model">
@@ -292,42 +296,42 @@ export function EvalsScreen() {
             </Field>
           </div>
         </details>
-
-        {localError && (
-          <p className="note" style={{ marginTop: 14, color: 'var(--color-alarm-ink)' }}>
-            {localError}
-          </p>
-        )}
-        {start.error && (
-          <div style={{ marginTop: 14 }}>
-            <QueryError what="The service would not start this run" error={start.error} />
-          </div>
-        )}
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 18,
-            marginTop: 18,
-            flexWrap: 'wrap',
-          }}
-        >
-          <button
-            type="button"
-            className="btn btn-primary"
-            style={{ fontSize: 14.5, padding: '11px 22px' }}
-            onClick={submit}
-            disabled={start.isPending}
-          >
-            {start.isPending ? 'Starting…' : 'Start evaluation'}
-          </button>
-          <p className="note" style={{ maxWidth: '50ch' }}>
-            Runs continue if you close this tab. The list below is kept in memory only — a
-            service restart clears it, but the results stay in Langfuse.
-          </p>
-        </div>
       </Panel>
+
+      {localError && (
+        <p className="note" style={{ marginTop: 14, color: 'var(--color-alarm-ink)' }}>
+          {localError}
+        </p>
+      )}
+      {start.error && (
+        <div style={{ marginTop: 14 }}>
+          <QueryError what="The service would not start this run" error={start.error} />
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 18,
+          marginTop: 18,
+          flexWrap: 'wrap',
+        }}
+      >
+        <button
+          type="button"
+          className="btn btn-primary"
+          style={{ fontSize: 14.5, padding: '11px 22px' }}
+          onClick={submit}
+          disabled={start.isPending}
+        >
+          {start.isPending ? 'Starting…' : 'Start evaluation'}
+        </button>
+        <p className="note" style={{ maxWidth: '50ch' }}>
+          Runs continue if you close this tab. The list below is kept in memory only — a
+          service restart clears it, but the results stay in Langfuse.
+        </p>
+      </div>
 
       <h5 className="sect" style={{ margin: '26px 0 10px' }}>
         Runs
@@ -438,6 +442,54 @@ function RunRow({
         </Link>
       </td>
     </tr>
+  )
+}
+
+/** A dataset multiselect: the folder picker, plus the mono summary line the
+ * mockup puts under every choice list. Full Langfuse names go back to the form;
+ * the picker only folds how they are shown. */
+function DatasetField({
+  label,
+  resources,
+  loading,
+  error,
+  empty,
+  selected,
+  onChange,
+}: {
+  label: string
+  resources: NamedResource[] | undefined
+  loading: boolean
+  error: unknown
+  empty: string
+  selected: string[]
+  onChange: (next: string[]) => void
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      {error ? (
+        <p className="note" style={{ color: 'var(--color-alarm-ink)' }}>
+          Could not list the Langfuse datasets — {errorMessage(error)}
+        </p>
+      ) : loading ? (
+        <p className="note">Loading…</p>
+      ) : (
+        <FolderDatasetPicker
+          items={(resources ?? []).map((resource) => ({
+            name: resource.name,
+            label: resource.label,
+          }))}
+          selected={selected}
+          onChange={onChange}
+          boxed
+          empty={empty}
+        />
+      )}
+      <span className="choice-summary mono">
+        {selected.length === 0 ? 'nothing selected' : joinNames(selected)}
+      </span>
+    </div>
   )
 }
 

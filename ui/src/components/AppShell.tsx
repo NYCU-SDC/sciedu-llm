@@ -1,72 +1,87 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet } from "react-router-dom";
 
-import { LANGFUSE_URL } from '../api/client'
+import { LANGFUSE_URL } from "../api/client";
+import { errorMessage } from "../api/errors";
+import { useHealth } from "../api/hooks";
 
-/** Exactly four destinations. The preset editor and the run detail are
+/** Exactly five destinations. The preset editor and the run detail are
  * sub-screens of their list, reached by opening a row — not nav entries. */
 const NAV = [
-  { to: '/rag', label: 'Retrieval settings' },
-  { to: '/presets', label: 'Behaviour presets' },
-  { to: '/evals', label: 'Evaluations' },
-  { to: '/reference', label: "What's available" },
-]
-
-/** Whichever host the API calls actually go to, so the footer is not a claim
- * about a deployment this build may not be talking to. */
-function connectedHost(): string {
-  const base = import.meta.env.VITE_API_BASE_URL
-  if (!base) return window.location.host
-  try {
-    return new URL(base, window.location.origin).host
-  } catch {
-    return base
-  }
-}
+    { to: "/rag", label: "Retrieval settings" },
+    { to: "/presets", label: "Behaviour presets" },
+    { to: "/evals", label: "Evaluations" },
+    // Not part of docs/admin-ui-spec.md: a manual tester for POST /agents.
+    { to: "/playground", label: "Playground" },
+    { to: "/reference", label: "What's available" },
+];
 
 export function AppShell() {
-  return (
-    <div className="shell">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <span className="sidebar-dot" />
-          <div>
-            <div className="sidebar-name">sciedu-llm</div>
-            <div className="sidebar-kicker">Service console</div>
-          </div>
+    return (
+        <div className="shell">
+            <header className="topbar">
+                <div className="topbar-inner">
+                    <NavLink to="/rag" className="brand">
+                        <span className="brand-dot" />
+                        <span className="brand-name">sciedu-llm</span>
+                    </NavLink>
+
+                    <nav className="topnav">
+                        {NAV.map((item) => (
+                            // NavLink is not `end`, so /presets stays lit while its editor is
+                            // open, and sets aria-current="page" — which is what the active
+                            // tab's accent underline keys off in app.css.
+                            <NavLink
+                                key={item.to}
+                                to={item.to}
+                                className="topnav-link"
+                            >
+                                {item.label}
+                            </NavLink>
+                        ))}
+                    </nav>
+
+                    <BackendStatus />
+                </div>
+            </header>
+
+            <main className="main">
+                <Outlet />
+            </main>
         </div>
+    );
+}
 
-        <nav className="sidebar-nav">
-          {NAV.map((item) => (
-            // NavLink is not `end`, so /presets stays lit while its editor is
-            // open, and sets aria-current="page" — which is what the active
-            // dot and tint key off in app.css.
-            <NavLink key={item.to} to={item.to} className="btn nav-btn">
-              <span className="nav-marker" />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </nav>
+/** What the console can actually know about the backend: whether `GET /healthz`
+ * answered, a few seconds ago. Not which host it went to — that is a build-time
+ * setting and says nothing about whether anything is listening. */
+function BackendStatus() {
+    const health = useHealth();
+    const waiting = health.isPending;
+    const up = health.isSuccess;
 
-        <div className="sidebar-foot">
-          Connected to <span className="mono">{connectedHost()}</span>
-          {LANGFUSE_URL && (
-            <>
-              {' · traces in '}
-              <a href={LANGFUSE_URL} target="_blank" rel="noreferrer">
-                Langfuse
-              </a>
-            </>
-          )}
-          <div style={{ marginTop: 8 }}>
-            Settings you change here live in the service's memory. A restart puts the
-            server's own defaults back.
-          </div>
+    return (
+        <div className="status" aria-live="polite">
+            <span
+                className={`status-dot ${waiting ? "status-wait" : up ? "status-on" : "status-off"}`}
+                aria-hidden
+            />
+            <span title={health.error ? errorMessage(health.error) : undefined}>
+                {waiting
+                    ? "checking the backend"
+                    : up
+                      ? "backend connected"
+                      : "backend unreachable"}
+            </span>
+            {LANGFUSE_URL && (
+                <>
+                    <span className="status-sep" aria-hidden>
+                        ·
+                    </span>
+                    <a href={LANGFUSE_URL} target="_blank" rel="noreferrer">
+                        traces in Langfuse
+                    </a>
+                </>
+            )}
         </div>
-      </aside>
-
-      <main className="main">
-        <Outlet />
-      </main>
-    </div>
-  )
+    );
 }

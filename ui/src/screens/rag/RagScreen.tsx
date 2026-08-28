@@ -3,9 +3,10 @@ import { useMemo, useState } from 'react'
 import { ApiError } from '../../api/client'
 import { errorMessage } from '../../api/errors'
 import { useDatasets, useModels, useRagConfig, useRagMutations } from '../../api/hooks'
-import { CheckList, type Choice } from '../../components/Choices'
+import type { NamedResource } from '../../api/types'
 import { ConfirmDialog } from '../../components/ConfirmDialog'
 import { ErrorPanel, QueryError } from '../../components/ErrorPanel'
+import { FolderDatasetPicker, type DatasetItem } from '../../components/FolderDatasetPicker'
 import { Field, Panel } from '../../components/Panel'
 import { Loading, PageHeader } from '../../components/States'
 import { RebuildTag } from '../../components/StatusTag'
@@ -136,10 +137,7 @@ export function RagScreen() {
   }
 
   const live = config.data
-  const corpusChoices = buildCorpusChoices(
-    datasets.data?.corpus.map((entry) => entry.name) ?? [],
-    live.corpus_datasets,
-  )
+  const corpusItems = buildCorpusItems(datasets.data?.corpus ?? [], live.corpus_datasets)
   const modelOptions = models.data?.models ?? []
 
   return (
@@ -196,17 +194,12 @@ export function RagScreen() {
             ) : !datasets.data ? (
               <Loading what="the dataset list" />
             ) : (
-              <CheckList
-                choices={corpusChoices}
+              <FolderDatasetPicker
+                items={corpusItems}
                 selected={current.corpus_datasets}
                 disabled={busy}
                 empty="Langfuse has no datasets under the corpus folder yet."
-                onToggle={(value, next) => {
-                  const chosen = new Set(current.corpus_datasets)
-                  if (next) chosen.add(value)
-                  else chosen.delete(value)
-                  set('corpus_datasets', [...chosen].sort())
-                }}
+                onChange={(next) => set('corpus_datasets', next)}
               />
             )}
             {problemFor('corpus_datasets') && (
@@ -407,21 +400,17 @@ export function RagScreen() {
             >
               {apply.isPending ? 'Applying…' : 'Apply to the running service'}
             </button>
-            <p className="note" style={{ maxWidth: '46ch' }}>
-              Applies immediately, and only in memory —{' '}
-              <strong>
-                if the service restarts, these values go back to the server's defaults.
-              </strong>{' '}
-              {changes.length === 0
-                ? 'Nothing is waiting to be applied.'
-                : rebuildsOnApply
+            {changes.length > 0 && (
+              <p className="note" style={{ maxWidth: '46ch' }}>
+                {rebuildsOnApply
                   ? `${rebuildCount === 1 ? 'One of your changes needs' : `${rebuildCount} of your changes need`} the index rebuilt, which takes a while.`
                   : 'None of your changes need the index rebuilt.'}
-            </p>
+              </p>
+            )}
           </div>
         </div>
 
-        <aside className="panel" style={{ position: 'sticky', top: 26 }}>
+        <aside className="panel sticky-aside">
           <h5 className="sect" style={{ margin: 0 }}>
             Unsaved changes
           </h5>
@@ -617,20 +606,16 @@ function StatusBanner({
 /** Corpus datasets Langfuse advertises, plus anything the pipeline is already
  * built from that has since left the listing — dropping it silently would hide
  * part of the live configuration. */
-function buildCorpusChoices(available: string[], active: string[]): Choice[] {
-  const seen = new Set(available)
-  const extras = active.filter((name) => !seen.has(name))
-  return [...available, ...extras].sort().map((name) => ({
-    value: name,
-    label: (
-      <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>
-        {name}
-      </span>
-    ),
-    note: extras.includes(name)
-      ? 'In use, but Langfuse no longer lists it under the corpus folder.'
-      : undefined,
-  }))
+function buildCorpusItems(available: NamedResource[], active: string[]): DatasetItem[] {
+  const listed = new Map(available.map((entry) => [entry.name, entry.label]))
+  const extras = active.filter((name) => !listed.has(name))
+  return [
+    ...available.map((entry) => ({ name: entry.name, label: entry.label })),
+    ...extras.map((name) => ({
+      name,
+      note: 'In use, but Langfuse no longer lists it under the corpus folder.',
+    })),
+  ]
 }
 
 function ModelPicker({

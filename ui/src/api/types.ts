@@ -3,6 +3,15 @@
  * invented: if a field is not on the Python model it is not in this file, and
  * the UI never renders a number the API did not send. */
 
+// ── /healthz ──────────────────────────────────────────────────────────────
+// app/schema/health.py
+
+/** HealthzResponse. The body is barely the point — the status code is what the
+ * top bar's indicator reports. */
+export interface HealthzResponse {
+  status: string
+}
+
 // ── /admin/rag ────────────────────────────────────────────────────────────
 // app/schema/admin/rag.py
 

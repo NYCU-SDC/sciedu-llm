@@ -1,0 +1,21 @@
+{
+  "name": "rag-agent",
+  "description": "Single assistant that decides for itself when to search the textbook, via the rag_search tool.",
+  "model": null,
+  "max_steps": 8,
+  "tool_choice": "auto",
+  "rag_mode": "off",
+  "orchestrator": "assistant",
+  "characters": [
+    {
+      "id": "assistant",
+      "display_name": "助教",
+      "role": "assistant",
+      "prompt_name": "agents/assistant-system",
+      "tools": [
+        "rag_search"
+      ],
+      "max_steps": 3
+    }
+  ]
+}

@@ -18,10 +18,12 @@ pnpm install
 pnpm dev            # http://localhost:5173
 ```
 
-`pnpm dev` proxies every `/admin/...` request to `http://localhost:8080`, so
-start the backend first (`uv run fastapi dev src/app/main.py --port 8080`, or
-however the service is launched in your checkout). Point the proxy elsewhere
-with `VITE_DEV_API_TARGET=http://host:port pnpm dev`.
+`pnpm dev` proxies every `/admin/...` request — plus `/healthz`, which the top
+bar polls, and `/agents`, which the playground streams — to
+`http://localhost:8080`, so start the backend first (`uv run fastapi dev
+src/app/main.py --port 8080`, or however the service is launched in your
+checkout). Point the proxy elsewhere with
+`VITE_DEV_API_TARGET=http://host:port pnpm dev`.
 
 Every screen degrades honestly with no backend running: each list shows the
 service's own `{"detail": ...}` in an error panel rather than an empty table.
@@ -39,7 +41,7 @@ them set before `pnpm build`.
 
 | Variable | Default | What it does |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `""` (same origin) | Where the `/admin` API lives. Leave empty when the console is served by the backend itself. In dev the value is ignored in favour of the proxy unless you set it explicitly. |
+| `VITE_API_BASE_URL` | `""` (same origin) | Where the backend lives — it prefixes `/admin/...`, `/agents` and `/healthz` alike. Leave empty when the console is served by the backend itself. In dev the value is ignored in favour of the proxy unless you set it explicitly. |
 | `VITE_LANGFUSE_URL` | unset | Base URL of your Langfuse instance, e.g. `https://langfuse.example.org`. When it is unset every "open in Langfuse" link is **hidden** rather than guessed at — session ids stay copyable either way. |
 | `VITE_DEV_API_TARGET` | `http://localhost:8080` | Dev-server proxy target only; not compiled into the app. |
 
@@ -54,12 +56,14 @@ docker run -p 8081:80 -e BACKEND_URL=http://llm-provider:8080 sciedu-llm-ui
 
 The image (see `Dockerfile`) builds the static bundle and serves it with nginx.
 The backend URL is a **runtime** setting: the bundle makes same-origin
-`/admin/...` calls and nginx proxies them to `$BACKEND_URL` (scheme + host +
-port, no trailing slash — see `nginx/default.conf.template`), so one image
-serves every environment without a rebuild. `VITE_LANGFUSE_URL` is the one
-build-time knob: pass it as `--build-arg VITE_LANGFUSE_URL=https://...` to show
-the "open in Langfuse" links. The proxy allows 30-minute reads to survive
-synchronous RAG rebuilds.
+`/admin/...`, `/agents` and `/healthz` calls and nginx proxies them to
+`$BACKEND_URL` (scheme + host + port, no trailing slash — see
+`nginx/default.conf.template`), so one image serves every environment without a
+rebuild. `VITE_LANGFUSE_URL` is the one build-time knob: pass it as
+`--build-arg VITE_LANGFUSE_URL=https://...` to show the "open in Langfuse"
+links. The `/admin/` proxy allows 30-minute reads to survive synchronous RAG
+rebuilds; the `/agents` one turns buffering off so SSE frames reach the browser
+as they are produced.
 
 ## Screens, and how they map to the spec
 
@@ -70,10 +74,13 @@ synchronous RAG rebuilds.
 | `/presets/:name`, `/presets/new` | Preset editor | 2. Preset management | `GET`/`PUT`/`DELETE /admin/presets/{name}`, `GET /admin/models` |
 | `/evals` | Evaluations | 3. Evaluation runs | `POST`/`GET /admin/evals/runs`, `POST /admin/evals/runs/{id}/cancel`, `GET /admin/datasets`, `GET /admin/judge-prompts`, `GET /admin/models` |
 | `/evals/runs/:runId` | Run detail | 3. Evaluation runs | `GET /admin/evals/runs/{id}`, `GET /admin/evals/history`, cancel |
+| `/playground` | Playground | manual testing, not in `docs/admin-ui-spec.md` | `POST /agents` (SSE), `GET /admin/presets` |
 | `/reference` | What's available | Supporting lookups | `GET /admin/models`, `GET /admin/datasets`, `GET /admin/judge-prompts` |
 
-The sidebar has exactly those four top-level entries; the preset editor and the
-run detail are sub-screens reached by opening a row.
+The top bar carries exactly those top-level entries; the preset editor and the
+run detail are sub-screens reached by opening a row. Beside them, on the right
+of the bar, sits the backend indicator: `GET /healthz` every 5s, green when it
+answers and red when it does not.
 
 ## Things worth knowing before changing it
 
@@ -88,8 +95,9 @@ run detail are sub-screens reached by opening a row.
   disables its controls while one is in flight. The dev proxy is configured with
   the same generous timeout.
 - **Applied RAG settings live in the service's memory.** A restart reverts them
-  to the `RAG_*` environment defaults; the sidebar footer and the Apply note
-  both say so.
+  to the `RAG_*` environment defaults. The screens no longer repeat that warning
+  beside every Apply — it read as a caveat about the console rather than a fact
+  about the service — but it is still what happens.
 - **Polling** only runs while something is non-terminal: the run list and one
   run's detail re-read every 3s until every run reaches
   `completed`/`failed`/`cancelled`.
@@ -100,10 +108,37 @@ run detail are sub-screens reached by opening a row.
   falls back to `FALLBACK_TOOLS` in `src/api/types.ts`, which mirrors
   `_REGISTRY` in `src/app/agents/tools.py` (`rag_search`, `summon_subagent`).
   When the endpoint lands, the list goes live with no frontend change.
-- **The preset editor's "Validate" button is local only** — `JSON.parse` plus a
-  required-shape check. The semantic rules (tool names, what forced retrieval
-  forbids, summoned characters needing a prompt) belong to the server and run on
-  save; its 422 is rendered field by field.
+- **The preset editor is a form, and only a form.** Raw JSON authoring lives in
+  one place: **Import presets** on the preset list, which takes a single document
+  or an array of them, shape-checks each in the browser (`JSON.parse` plus
+  `checkPresetShape`) and then writes them one `PUT /admin/presets/{name}` at a
+  time so a rejection reports against the document it came from. The semantic
+  rules (tool names, what forced retrieval forbids, summoned characters needing a
+  prompt) belong to the server either way, and its 422 is rendered field by
+  field.
+- **Dataset pickers fold Langfuse's paths.** `FolderDatasetPicker` strips the
+  group prefix, groups by the next segment and offers per-folder and
+  select-everything checkboxes with a real indeterminate state — but every value
+  it hands back is the full dataset name.
+- **The playground is the one screen that talks past `/admin`.** It streams
+  `POST /agents` itself — `EventSource` cannot POST, so `src/api/agentsStream.ts`
+  reads the response body with a `fetch` reader, splits `data: …\n\n` frames
+  across chunk boundaries and types every event in
+  `docs/agents-spec.md`. Both proxies had to learn the route: `/agents` in
+  `vite.config.ts`, and a `location /agents` block in the nginx template with
+  `proxy_buffering off` — nginx would otherwise hold the whole answer back until
+  the run finished, which is the opposite of what the screen is for.
+- **Playground identity: one user, one session per page load.** Every request
+  sends `user: "playground"`, so a Langfuse filter separates manual pokes at the
+  service from anything real, and `session: <uuid>` minted once per page load
+  (`crypto.randomUUID`, with a fallback for the plain-http lab origins where it
+  is undefined) so the turns of one conversation group into a single trace
+  session. The id is shown, copyable, in the screen header; **New session** mints
+  a fresh one and clears the transcript. Nothing is persisted anywhere — no
+  storage, no backend record — so a reload is a clean slate, and because /agents
+  is stateless every turn re-sends the whole conversation, with each finished
+  answer folded into one assistant message (its speakers' non-internal text, the
+  reasoning and tool traffic dropped).
 - **Backend content may be Traditional Chinese** (preset display names such as
   `助教`). The app chrome stays in English, as in the mockup.
 
@@ -111,9 +146,10 @@ run detail are sub-screens reached by opening a row.
 
 ```
 src/
-  api/        client.ts (typed fetch + FastAPI error shapes), errors.ts, types.ts, hooks.ts
+  api/        client.ts (typed fetch + FastAPI error shapes), errors.ts, types.ts, hooks.ts,
+              agentsStream.ts (the POST /agents SSE reader and its event union)
   components/ AppShell, Panel/Field, ErrorPanel, StatusTag, Choices, ConfirmDialog, …
-  screens/    rag/, presets/, evals/, reference/  — one folder per screen
+  screens/    rag/, presets/, evals/, playground/, reference/  — one folder per screen
   styles/     organic.css (the design system, vendored) + app.css (this app's layer)
   lib/        format.ts
 ```

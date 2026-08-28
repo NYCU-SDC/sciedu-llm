@@ -20,6 +20,22 @@ export default defineConfig({
         timeout: 30 * 60 * 1000,
         proxyTimeout: 30 * 60 * 1000,
       },
+      // /agents is not under /admin, so it needs a rule of its own. It answers
+      // Server-Sent Events, which http-proxy forwards chunk by chunk; the
+      // timeouts only need to outlast a run, not a rebuild.
+      '/agents': {
+        target: DEV_API_TARGET,
+        changeOrigin: true,
+        timeout: 10 * 60 * 1000,
+        proxyTimeout: 10 * 60 * 1000,
+      },
+      // The top bar polls /healthz every few seconds; it is not under /admin
+      // either, and a short leash is right for it — an unanswered probe is
+      // exactly what the indicator is there to report.
+      '/healthz': {
+        target: DEV_API_TARGET,
+        changeOrigin: true,
+      },
     },
   },
 })

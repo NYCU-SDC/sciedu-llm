@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 
@@ -8,6 +9,7 @@ import { ErrorPanel, QueryError } from '../../components/ErrorPanel'
 import { Loading, PageHeader } from '../../components/States'
 import { PresetSourceTag } from '../../components/StatusTag'
 import { formatUnixSeconds, pluralise } from '../../lib/format'
+import { ImportPresetsDialog } from './ImportPresetsDialog'
 import { describeRagMode } from './presetShape'
 
 export function PresetsScreen() {
@@ -15,6 +17,7 @@ export function PresetsScreen() {
   const presets = usePresets()
   const report = usePresetReport()
   const { refresh } = usePresetMutations()
+  const [importing, setImporting] = useState(false)
 
   // `GET /admin/presets` answers names and provenance only; the model, cast,
   // tool count and RAG mode live on the document, so the table fills its
@@ -51,6 +54,13 @@ export function PresetsScreen() {
               onClick={() => refresh.mutate()}
             >
               {refresh.isPending ? 'Reloading…' : 'Reload from Langfuse'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setImporting(true)}
+            >
+              Import presets
             </button>
             <button
               type="button"
@@ -139,6 +149,8 @@ export function PresetsScreen() {
           </ErrorPanel>
         </div>
       )}
+
+      {importing && <ImportPresetsDialog onClose={() => setImporting(false)} />}
     </>
   )
 }

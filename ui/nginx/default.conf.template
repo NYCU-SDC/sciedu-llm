@@ -17,6 +17,33 @@ server {
         proxy_send_timeout 1800s;
     }
 
+    # /agents is not under /admin, so it needs a block of its own — and it is a
+    # Server-Sent Events stream, which nginx would otherwise buffer and hand
+    # over in one lump once the run finished. The playground reads it token by
+    # token, so buffering and caching are off and the read timeout outlasts a
+    # long agentic run.
+    location /agents {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    # The top bar's backend indicator polls this every few seconds. An exact
+    # match, so the SPA fallback below keeps every other route.
+    location = /healthz {
+        proxy_pass ${BACKEND_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     # Hashed build assets never change — cache them hard.
     location /assets/ {
         add_header Cache-Control "public, max-age=31536000, immutable";

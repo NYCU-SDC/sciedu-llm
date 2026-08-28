@@ -17,19 +17,15 @@ import {
   SUMMON_SUBAGENT,
   blankCharacter,
   blankPreset,
-  checkPresetShape,
   courseMaterialMode,
   forcedRagObjections,
   formatTools,
   labelForLoc,
-  normalisePreset,
   parseTools,
   setCourseMaterialMode,
   type CourseMaterialMode,
   type ShapeProblem,
 } from './presetShape'
-
-type Tab = 'form' | 'json'
 
 const TOOL_CHOICES: { value: ToolChoice; label: string }[] = [
   { value: 'auto', label: 'auto — the model decides' },
@@ -60,8 +56,6 @@ export function PresetEditorScreen() {
   const tools = useTools()
   const { save, remove } = usePresetMutations()
 
-  const [tab, setTab] = useState<Tab>('form')
-  const [jsonText, setJsonText] = useState('')
   const [localProblems, setLocalProblems] = useState<ShapeProblem[] | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
@@ -85,49 +79,8 @@ export function PresetEditorScreen() {
 
   const deletable = detail ? !detail.builtin || detail.shadowed_builtin : false
 
-  const toJson = (value: Preset) => JSON.stringify(value, null, 2)
-
-  const switchTab = (next: Tab) => {
-    if (next === tab) return
-    if (next === 'json' && preset) {
-      setJsonText(toJson(preset))
-      setLocalProblems(null)
-      setTab('json')
-      return
-    }
-    // Going back to the form needs a document the form can bind to.
-    const parsed = parseJson(jsonText)
-    if (!parsed.ok) {
-      setLocalProblems(parsed.problems)
-      return
-    }
-    setPreset(parsed.preset)
-    setLocalProblems(null)
-    setTab('form')
-  }
-
-  /** Local JSON checking only — the semantic rules run on the server at save
-   * time, and that is the validation that counts. */
-  const validate = () => {
-    const parsed = parseJson(jsonText)
-    setLocalProblems(parsed.ok ? [] : parsed.problems)
-    if (parsed.ok) setPreset(parsed.preset)
-  }
-
-  const currentDocument = (): Preset | null => {
-    if (tab === 'form') return preset
-    const parsed = parseJson(jsonText)
-    if (!parsed.ok) {
-      setLocalProblems(parsed.problems)
-      return null
-    }
-    setLocalProblems(null)
-    setPreset(parsed.preset)
-    return parsed.preset
-  }
-
   const onSave = () => {
-    const document = currentDocument()
+    const document = preset
     if (!document) return
     if (!document.name) {
       setLocalProblems([{ path: 'name', message: 'A preset needs a name before it can be saved.' }])
@@ -217,34 +170,14 @@ export function PresetEditorScreen() {
         mono
         lede={<StoredIn isNew={isNew} detail={detail} />}
         actions={
-          <>
-            <div className="seg">
-              {(['form', 'json'] as Tab[]).map((option) => (
-                <label className="seg-opt" key={option}>
-                  <input
-                    type="radio"
-                    name="preset-tab"
-                    checked={tab === option}
-                    onChange={() => switchTab(option)}
-                  />
-                  <span>{option === 'form' ? 'Form' : 'JSON'}</span>
-                </label>
-              ))}
-            </div>
-            {tab === 'json' && (
-              <button type="button" className="btn btn-secondary" onClick={validate}>
-                Validate
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={onSave}
-              disabled={save.isPending}
-            >
-              {save.isPending ? 'Saving…' : 'Save & reload registry'}
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={onSave}
+            disabled={save.isPending}
+          >
+            {save.isPending ? 'Saving…' : 'Save & reload registry'}
+          </button>
         }
       />
 
@@ -268,19 +201,6 @@ export function PresetEditorScreen() {
         </div>
       )}
 
-      {localProblems !== null && localProblems.length === 0 && (
-        <div className="banner banner-good" style={{ marginTop: 20 }}>
-          <span className="banner-led" />
-          <div className="banner-body">
-            <div className="banner-title">The document has the right shape</div>
-            <div className="banner-line">
-              Tool names, and the rules about summoned characters and forced retrieval, are
-              checked by the service when you save.
-            </div>
-          </div>
-        </div>
-      )}
-
       {save.error && (
         <div style={{ marginTop: 14 }}>
           <SaveError error={save.error} preset={preset} />
@@ -294,211 +214,191 @@ export function PresetEditorScreen() {
       )}
 
       <div className="split split-narrow" style={{ marginTop: 14 }}>
-        {tab === 'json' ? (
-          <Panel title="The preset document">
-            <p className="note" style={{ marginBottom: 12 }}>
-              This is exactly what is stored as the <span className="mono">config/presets</span>{' '}
-              dataset item, and exactly what{' '}
-              <span className="mono">PUT /admin/presets/{preset.name || '{name}'}</span>{' '}
-              accepts.
-            </p>
-            <textarea
-              className="input code"
-              spellCheck={false}
-              value={jsonText}
-              onChange={(event) => {
-                setJsonText(event.target.value)
-                setLocalProblems(null)
-              }}
-            />
-          </Panel>
-        ) : (
-          <div className="col">
-            <Panel title="Basics">
-              <div className="grid-2">
-                <Field
-                  label="Preset name"
-                  hint={
-                    renamed
-                      ? `Saving under a new name creates a second preset; '${detail?.name}' stays as it is.`
-                      : 'Lowercase letters, digits, "-" and "_".'
-                  }
-                >
-                  {(id) => (
-                    <input
-                      id={id}
-                      className="input mono"
-                      value={preset.name}
-                      onChange={(event) => update({ name: event.target.value })}
-                    />
-                  )}
-                </Field>
-                <Field label="Model" hint="The service's own default is used when this is left unset.">
-                  {(id) => (
-                    <select
-                      id={id}
-                      className="input mono"
-                      value={preset.model ?? ''}
-                      onChange={(event) =>
-                        update({ model: event.target.value === '' ? null : event.target.value })
-                      }
-                    >
-                      <option value="">— the server's default model —</option>
-                      {modelOptions(allowed, preset.model).map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </Field>
-              </div>
-              <Field label="What this preset is for" style={{ marginTop: 14 }}>
+        <div className="col">
+          <Panel title="Basics">
+            <div className="grid-2">
+              <Field
+                label="Preset name"
+                hint={
+                  renamed
+                    ? `Saving under a new name creates a second preset; '${detail?.name}' stays as it is.`
+                    : 'Lowercase letters, digits, "-" and "_".'
+                }
+              >
                 {(id) => (
                   <input
                     id={id}
-                    className="input"
-                    value={preset.description}
-                    onChange={(event) => update({ description: event.target.value })}
+                    className="input mono"
+                    value={preset.name}
+                    onChange={(event) => update({ name: event.target.value })}
                   />
                 )}
               </Field>
-            </Panel>
-
-            <Panel title="Cast">
-              <p className="note" style={{ marginBottom: 14 }}>
-                One assistant answers by default. You can add a second character the first
-                one may call in when it needs a different voice.
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {preset.characters.map((character, index) => (
-                  <CharacterCard
-                    key={index}
-                    character={character}
-                    isOrchestrator={character.id === preset.orchestrator}
-                    onChange={(patch) => updateCharacter(index, patch)}
-                    onRemove={
-                      preset.characters.length > 1 && character.id !== preset.orchestrator
-                        ? () => removeCharacter(index)
-                        : undefined
+              <Field label="Model" hint="The service's own default is used when this is left unset.">
+                {(id) => (
+                  <select
+                    id={id}
+                    className="input mono"
+                    value={preset.model ?? ''}
+                    onChange={(event) =>
+                      update({ model: event.target.value === '' ? null : event.target.value })
                     }
-                  />
-                ))}
-                {preset.characters.length < 2 && (
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ alignSelf: 'flex-start' }}
-                    onClick={addCharacter}
                   >
-                    <Plus size={15} strokeWidth={2.75} aria-hidden />
-                    Add a summonable character
-                  </button>
+                    <option value="">— the server's default model —</option>
+                    {modelOptions(allowed, preset.model).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 )}
-              </div>
-            </Panel>
-
-            <Panel title="Course material">
-              <RadioList
-                name="course-material"
-                options={COURSE_MATERIAL}
-                value={courseMaterialMode(preset)}
-                onChange={(mode) => setPreset(setCourseMaterialMode(preset, mode))}
-              />
-              {objections.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                  <ErrorPanel title="The service will refuse this combination">
-                    <div className="alarm-list">
-                      {objections.map((objection) => (
-                        <div style={{ fontSize: 12.5 }} key={objection}>
-                          {objection}
-                        </div>
-                      ))}
-                    </div>
-                  </ErrorPanel>
-                </div>
+              </Field>
+            </div>
+            <Field label="What this preset is for" style={{ marginTop: 14 }}>
+              {(id) => (
+                <input
+                  id={id}
+                  className="input"
+                  value={preset.description}
+                  onChange={(event) => update({ description: event.target.value })}
+                />
               )}
-            </Panel>
+            </Field>
+          </Panel>
 
-            <Panel title="Limits">
-              <div className="grid-2">
-                <Field
-                  label="Maximum steps per reply"
-                  hint={`How many times it may use a tool before it must answer. At most ${MAX_STEPS_CAP}.`}
+          <Panel title="Cast">
+            <p className="note" style={{ marginBottom: 14 }}>
+              One assistant answers by default. You can add a second character the first
+              one may call in when it needs a different voice.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {preset.characters.map((character, index) => (
+                <CharacterCard
+                  key={index}
+                  character={character}
+                  isOrchestrator={character.id === preset.orchestrator}
+                  onChange={(patch) => updateCharacter(index, patch)}
+                  onRemove={
+                    preset.characters.length > 1 && character.id !== preset.orchestrator
+                      ? () => removeCharacter(index)
+                      : undefined
+                  }
+                />
+              ))}
+              {preset.characters.length < 2 && (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ alignSelf: 'flex-start' }}
+                  onClick={addCharacter}
                 >
-                  {(id) => (
-                    <input
-                      id={id}
-                      className="input mono"
-                      inputMode="numeric"
-                      value={preset.max_steps}
-                      onChange={(event) =>
-                        update({ max_steps: toInt(event.target.value, preset.max_steps) })
-                      }
-                    />
-                  )}
-                </Field>
-                <Field label="Tool choice">
-                  {(id) => (
-                    <select
-                      id={id}
-                      className="input"
-                      value={preset.tool_choice}
-                      onChange={(event) =>
-                        update({ tool_choice: event.target.value as ToolChoice })
-                      }
-                    >
-                      {TOOL_CHOICES.map((choice) => (
-                        <option key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </Field>
-              </div>
-            </Panel>
-
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                flexWrap: 'wrap',
-                padding: 2,
-              }}
-            >
-              <button
-                type="button"
-                className="btn btn-primary"
-                style={{ fontSize: 14.5, padding: '11px 22px' }}
-                onClick={onSave}
-                disabled={save.isPending}
-              >
-                {save.isPending ? 'Saving…' : 'Save & reload registry'}
-              </button>
-              {deletable && (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-danger"
-                    onClick={() => setConfirmDelete(true)}
-                    disabled={remove.isPending}
-                  >
-                    <Trash2 size={15} strokeWidth={2.75} aria-hidden />
-                    Delete this preset
-                  </button>
-                  {detail?.shadowed_builtin && (
-                    <p className="note" style={{ maxWidth: '38ch' }}>
-                      Deleting brings the built-in <span className="mono">{detail.name}</span>{' '}
-                      back.
-                    </p>
-                  )}
-                </>
+                  <Plus size={15} strokeWidth={2.75} aria-hidden />
+                  Add a summonable character
+                </button>
               )}
             </div>
+          </Panel>
+
+          <Panel title="Course material">
+            <RadioList
+              name="course-material"
+              options={COURSE_MATERIAL}
+              value={courseMaterialMode(preset)}
+              onChange={(mode) => setPreset(setCourseMaterialMode(preset, mode))}
+            />
+            {objections.length > 0 && (
+              <div style={{ marginTop: 12 }}>
+                <ErrorPanel title="The service will refuse this combination">
+                  <div className="alarm-list">
+                    {objections.map((objection) => (
+                      <div style={{ fontSize: 12.5 }} key={objection}>
+                        {objection}
+                      </div>
+                    ))}
+                  </div>
+                </ErrorPanel>
+              </div>
+            )}
+          </Panel>
+
+          <Panel title="Limits">
+            <div className="grid-2">
+              <Field
+                label="Maximum steps per reply"
+                hint={`How many times it may use a tool before it must answer. At most ${MAX_STEPS_CAP}.`}
+              >
+                {(id) => (
+                  <input
+                    id={id}
+                    className="input mono"
+                    inputMode="numeric"
+                    value={preset.max_steps}
+                    onChange={(event) =>
+                      update({ max_steps: toInt(event.target.value, preset.max_steps) })
+                    }
+                  />
+                )}
+              </Field>
+              <Field label="Tool choice">
+                {(id) => (
+                  <select
+                    id={id}
+                    className="input"
+                    value={preset.tool_choice}
+                    onChange={(event) =>
+                      update({ tool_choice: event.target.value as ToolChoice })
+                    }
+                  >
+                    {TOOL_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+            </div>
+          </Panel>
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 16,
+              flexWrap: 'wrap',
+              padding: 2,
+            }}
+          >
+            <button
+              type="button"
+              className="btn btn-primary"
+              style={{ fontSize: 14.5, padding: '11px 22px' }}
+              onClick={onSave}
+              disabled={save.isPending}
+            >
+              {save.isPending ? 'Saving…' : 'Save & reload registry'}
+            </button>
+            {deletable && (
+              <>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-danger"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={remove.isPending}
+                >
+                  <Trash2 size={15} strokeWidth={2.75} aria-hidden />
+                  Delete this preset
+                </button>
+                {detail?.shadowed_builtin && (
+                  <p className="note" style={{ maxWidth: '38ch' }}>
+                    Deleting brings the built-in <span className="mono">{detail.name}</span>{' '}
+                    back.
+                  </p>
+                )}
+              </>
+            )}
           </div>
-        )}
+        </div>
 
         <aside className="sticky-side">
           <Panel title="Tools you can name">
@@ -561,8 +461,9 @@ export function PresetEditorScreen() {
               color: 'var(--color-accent-2-800)',
             }}
           >
-            Prefer to write the document directly? Switch to <strong>JSON</strong> above —
-            the service runs the same validation either way.
+            Already have the document written out? <strong>Import presets</strong> on the
+            preset list takes one JSON document or a whole array of them — the service runs
+            the same validation either way.
           </div>
         </aside>
       </div>
@@ -782,27 +683,6 @@ function SaveError({ error, preset }: { error: unknown; preset: Preset }) {
       </div>
     </ErrorPanel>
   )
-}
-
-type ParseResult =
-  | { ok: true; preset: Preset }
-  | { ok: false; problems: ShapeProblem[] }
-
-function parseJson(text: string): ParseResult {
-  let value: unknown
-  try {
-    value = JSON.parse(text)
-  } catch (error) {
-    return {
-      ok: false,
-      problems: [
-        { path: '(root)', message: `not valid JSON — ${errorMessage(error)}` },
-      ],
-    }
-  }
-  const problems = checkPresetShape(value)
-  if (problems.length > 0) return { ok: false, problems }
-  return { ok: true, preset: normalisePreset(value as Record<string, unknown>) }
 }
 
 function modelOptions(allowed: string[], current: string | null): string[] {

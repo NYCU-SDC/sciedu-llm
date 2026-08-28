@@ -20,6 +20,7 @@ import {
   type EvalHistoryEntry,
   type EvalRun,
   type EvalRunCreate,
+  type HealthzResponse,
   type ModelsResponse,
   type NamedResource,
   type Preset,
@@ -33,6 +34,7 @@ import {
 } from './types'
 
 export const keys = {
+  health: ['health'] as const,
   ragConfig: ['rag', 'config'] as const,
   presets: ['presets', 'list'] as const,
   preset: (name: string) => ['presets', 'detail', name] as const,
@@ -44,6 +46,32 @@ export const keys = {
   datasets: ['meta', 'datasets'] as const,
   judgePrompts: ['meta', 'judge-prompts'] as const,
   tools: ['meta', 'tools'] as const,
+}
+
+// ── health ────────────────────────────────────────────────────────────────
+
+const HEALTH_POLL_MS = 5000
+
+/** Is the service answering right now? The only query in the console that polls
+ * unconditionally — the top bar's indicator must mean one thing and one thing
+ * only: `GET /healthz` answered 200 within the last few seconds. `retry` and
+ * `networkMode` are restated here rather than inherited, because an indicator
+ * that pauses when the browser thinks it is offline would be reporting the
+ * browser's opinion instead of the service's. */
+export function useHealth(): UseQueryResult<HealthzResponse> {
+  return useQuery({
+    queryKey: keys.health,
+    queryFn: ({ signal }) => api.get<HealthzResponse>('/healthz', signal),
+    refetchInterval: HEALTH_POLL_MS,
+    // Keep polling even when the window is not the one in front: a console left
+    // open beside something else would otherwise sit on a stale dot until it
+    // was clicked back into, which is exactly when the answer matters least.
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+    retry: false,
+    networkMode: 'always',
+  })
 }
 
 // ── metadata ──────────────────────────────────────────────────────────────

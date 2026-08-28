@@ -4,6 +4,7 @@ import { AppShell } from './components/AppShell'
 import { PageHeader } from './components/States'
 import { EvalsScreen } from './screens/evals/EvalsScreen'
 import { RunDetailScreen } from './screens/evals/RunDetailScreen'
+import { PlaygroundScreen } from './screens/playground/PlaygroundScreen'
 import { PresetEditorScreen } from './screens/presets/PresetEditorScreen'
 import { PresetsScreen } from './screens/presets/PresetsScreen'
 import { RagScreen } from './screens/rag/RagScreen'
@@ -22,6 +23,7 @@ export function App() {
         <Route path="/presets/:name" element={<PresetEditorScreen />} />
         <Route path="/evals" element={<EvalsScreen />} />
         <Route path="/evals/runs/:runId" element={<RunDetailScreen />} />
+        <Route path="/playground" element={<PlaygroundScreen />} />
         <Route path="/reference" element={<ReferenceScreen />} />
         <Route path="*" element={<NotFound />} />
       </Route>

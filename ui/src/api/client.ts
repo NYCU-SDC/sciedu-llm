@@ -9,8 +9,11 @@
 import type { ValidationProblem } from './errors'
 import { detailToProblems, detailToMessage } from './errors'
 
-/** Same-origin by default; the dev server proxies /admin to :8080. */
-const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+/** Same-origin by default; the dev server proxies /admin — and /agents, which
+ * the playground streams from — to :8080. Exported because the SSE client in
+ * `agentsStream.ts` cannot go through `request()` (it reads the body itself)
+ * but must resolve its URL exactly the same way. */
+export const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
 /** Rebuilds and resets are synchronous calls that re-index the whole corpus, so
  * they get a much longer leash than a listing. */
