@@ -37,6 +37,11 @@ logging.basicConfig(
 # failures anyway.
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# jieba sets its *own* logger to DEBUG, so its dictionary-loading chatter reaches
+# our handler however high the root level is. It has nothing to say to an
+# operator; the first build of a process would otherwise open with it.
+logging.getLogger("jieba").setLevel(logging.WARNING)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
