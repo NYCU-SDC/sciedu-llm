@@ -256,10 +256,6 @@ export function RunDetailScreen() {
                             </tbody>
                         </table>
                     </Panel>
-
-                    {data.question_datasets.map((dataset) => (
-                        <HistoryPanel key={dataset} dataset={dataset} />
-                    ))}
                 </div>
 
                 <aside className="sticky-side">
@@ -317,21 +313,6 @@ export function RunDetailScreen() {
                             </p>
                         )}
                     </Panel>
-
-                    <div
-                        style={{
-                            background: "var(--color-accent-2-100)",
-                            border: "1px solid var(--color-accent-2-300)",
-                            borderRadius: 12,
-                            padding: "14px 16px",
-                            fontSize: 12.5,
-                            lineHeight: 1.55,
-                            color: "var(--color-accent-2-800)",
-                        }}
-                    >
-                        <strong>分數保存在 Langfuse。</strong>
-                        此服務只在記憶體中保存執行狀態與設定，不會彙整分數；請在上方開啟工作階段查看。
-                    </div>
                 </aside>
             </div>
         </>
@@ -385,65 +366,5 @@ function ParamRow({
                 {value}
             </td>
         </tr>
-    );
-}
-
-/** Langfuse's own record of past judge runs against this question dataset —
- * durable, unlike the in-memory run list. It is a separate upstream call, so it
- * fails on its own without taking the page with it. */
-function HistoryPanel({ dataset }: { dataset: string }) {
-    const history = useEvalHistory(dataset);
-    return (
-        <Panel title={<>{dataset} 的較早執行紀錄</>}>
-            <p className="note" style={{ marginBottom: 10 }}>
-                從 Langfuse 讀取，因此此清單在重新啟動後仍會保留。
-            </p>
-            {history.isError ? (
-                <p className="note" style={{ color: "var(--color-alarm-ink)" }}>
-                    無法讀取 Langfuse — {errorMessage(history.error)}{" "}
-                    <button
-                        type="button"
-                        className="link-btn"
-                        onClick={() => void history.refetch()}
-                    >
-                        再試一次
-                    </button>
-                </p>
-            ) : !history.data ? (
-                <Loading what="歷史紀錄" />
-            ) : history.data.length === 0 ? (
-                <p className="note">Langfuse 尚未記錄此資料集的執行紀錄。</p>
-            ) : (
-                <table className="table">
-                    <thead>
-                        <tr>
-                            <th>實驗</th>
-                            <th>時間</th>
-                            <th>備註</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {history.data?.map((entry) => (
-                            <tr key={`${entry.dataset_name}:${entry.run_name}`}>
-                                <td className="mono" style={{ fontSize: 12.5 }}>
-                                    {entry.run_name}
-                                </td>
-                                <td className="mono" style={{ fontSize: 12.5 }}>
-                                    {formatDateTime(entry.created_at)}
-                                </td>
-                                <td
-                                    style={{
-                                        fontSize: 12.5,
-                                        color: "var(--color-neutral-700)",
-                                    }}
-                                >
-                                    {entry.description ?? "—"}
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            )}
-        </Panel>
     );
 }

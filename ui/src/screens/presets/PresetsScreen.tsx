@@ -50,7 +50,7 @@ export function PresetsScreen() {
     return (
         <>
             <PageHeader
-                kicker="config/presets"
+                kicker="Agent 行為定義"
                 title="行為預設"
                 lede="預設值是助理的一組命名行為：使用哪個模型、各角色採用哪個提示詞、可使用哪些工具，以及是否搜尋課程教材。"
                 actions={
@@ -134,12 +134,6 @@ export function PresetsScreen() {
                     </table>
                 )}
             </div>
-            <p className="note" style={{ marginTop: 10 }}>
-                Built-in presets ship with the service and can always be
-                restored. A preset stored in Langfuse with the same name takes
-                over from the built-in one; delete it and the built-in comes
-                back.
-            </p>
 
             {errorEntries.length > 0 && (
                 <div style={{ marginTop: 20 }}>
