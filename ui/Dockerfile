@@ -26,6 +26,11 @@ COPY --from=build /app/dist /usr/share/nginx/html
 # /etc/nginx/conf.d/ at container start, substituting only variables that are
 # set in the environment — nginx's own $uri/$host survive untouched.
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
+# Sourced by that same entrypoint (".envsh" is sourced, ".sh" is executed) before
+# the templates are rendered, so it can fix up BACKEND_URL first. It rewrites a
+# loopback hostname to its literal address — nginx's resolver cannot see
+# /etc/hosts, so "localhost" would otherwise fail every request.
+COPY --chmod=755 nginx/normalize-backend-url.envsh /docker-entrypoint.d/15-normalize-backend-url.envsh
 # Where /admin/*, /agents and /healthz are proxied — the one setting a
 # deployment has to get right. Scheme + host + port only: no trailing slash, no
 # path. In compose this is the backend *service name*, not localhost (localhost
@@ -39,9 +44,13 @@ COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 #
 # The name is resolved per request, so the backend may start after this
 # container and may be recreated on a new IP — see nginx/default.conf.template.
-ENV BACKEND_URL=http://localhost:8080
-# The DNS server that resolution goes to. 127.0.0.11 is Docker's embedded DNS,
-# which is what serves compose service names; override it when running anywhere
-# that is not Docker.
-ENV DNS_RESOLVER=127.0.0.11
+# 127.0.0.1 rather than "localhost" on purpose: an IP literal needs no DNS, and
+# only a backend sharing this container's network namespace can be reached this
+# way anyway. Any deployment where the API is its own service must set this.
+ENV BACKEND_URL=http://127.0.0.1:8080
+# Asks the image's own entrypoint helper to read the container's nameservers out
+# of /etc/resolv.conf; the script above turns those into nginx's `resolver`. So
+# service-name resolution works as-is under Docker, compose and Kubernetes alike.
+# Set DNS_RESOLVER to override it with an explicit address.
+ENV NGINX_ENTRYPOINT_LOCAL_RESOLVERS=1
 EXPOSE 80
