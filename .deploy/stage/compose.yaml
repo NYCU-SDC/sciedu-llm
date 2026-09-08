@@ -19,7 +19,6 @@ services:
       start_period: 180s
 
     environment:
-      HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
       OPENAI_DEFAULT_MODEL: "gpt-oss-120b"

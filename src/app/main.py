@@ -49,7 +49,10 @@ async def lifespan(app: FastAPI):
     logger = logging.getLogger(__name__)
 
     allowed_models = await validate_allowed_models()
-    logger.info("Allowed chat models: %s", allowed_models)
+    if allowed_models:
+        logger.info("Allowed chat models: %s", allowed_models)
+    else:
+        logger.info("Allowed chat models: all upstream models")
 
     app.state.rag_pipeline = await build_rag_pipeline()
     # Later rebuilds go through the manager, which runs them as a background task

@@ -14,10 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.dependencies import (
+    Settings,
     get_langfuse_client,
     get_openai_client,
     get_preset_registry,
     get_rag_pipeline,
+    get_settings,
 )
 from app.main import app
 from app.presets import DEFAULT_PRESETS, PresetNotFoundError
@@ -226,6 +228,24 @@ def test_chat_rejects_model_not_in_allowed_list(client, override_openai):
     assert "not allowed" in response.json()["detail"]
     # The disallowed request never reaches the OpenAI API.
     assert completions.calls == []
+
+
+def test_chat_allows_any_model_when_allowed_models_is_empty(client, override_openai):
+    completions = override_openai(stream_chunks=_answer("ok"))
+    settings = Settings(openai_api_key="mock_key", allowed_models="")
+    app.dependency_overrides[get_settings] = lambda: settings
+
+    response = client.post(
+        "/chat",
+        json={
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stream": False,
+            "model": "any-upstream-model",
+        },
+    )
+
+    assert response.status_code == 200
+    assert completions.calls[0]["model"] == "any-upstream-model"
 
 
 def test_chat_non_streaming_tolerates_a_choiceless_response(client, override_openai):

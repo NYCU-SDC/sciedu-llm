@@ -2,7 +2,7 @@
 
 ``/agents`` is inert against a provider that rejects ``tools`` or never emits
 ``delta.tool_calls``, and an OpenAI-compatible proxy is not obliged to do either.
-Run this against each model in ``ALLOWED_MODELS`` before relying on the endpoint:
+Run this against each model you intend to serve before relying on the endpoint:
 
     uv run python scripts/agents_tool_probe.py
 

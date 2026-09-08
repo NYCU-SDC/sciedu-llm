@@ -5,10 +5,20 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      action:
+        description: Action to run
+        required: true
+        default: deploy
+        type: choice
+        options:
+          - deploy
+          - cleanup
 
 jobs:
   Lint-and-Format:
     name: Lint with Ruff and Format with Ruff
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -35,6 +45,7 @@ jobs:
 
   Test:
     name: Test with Pytest
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -58,12 +69,8 @@ jobs:
 
   UI-Checks:
     name: Check the admin console (Prettier, oxlint, tsc)
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
     runs-on: ubuntu-latest
-    # Deliberately not in Build-Push-Image's `needs`: `ui/` is excluded from the
-    # backend image (see .dockerignore), so console code cannot affect the
-    # artifact this workflow ships. Require it through branch protection to gate
-    # merges; leaving it out of `needs` keeps a console lint error from blocking
-    # a backend deploy.
     defaults:
       run:
         working-directory: ui
@@ -96,7 +103,7 @@ jobs:
         run: pnpm run typecheck
 
   Build-Push-Image:
-    name: Build Docker image
+    name: Build backend Docker image
     runs-on: ubuntu-latest
     needs: [Lint-and-Format, Test]
     steps:
@@ -136,12 +143,41 @@ jobs:
             nycusdc/sciedu-llm:${{ github.sha }}
           context: .
 
+  Build-Push-Admin-Image:
+    name: Build admin panel Docker image
+    runs-on: ubuntu-latest
+    needs: UI-Checks
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_REGISTRY_USERNAME }}
+          password: ${{ secrets.DOCKER_REGISTRY_TOKEN }}
+
+      - name: Build and Push Docker image
+        uses: docker/build-push-action@v7
+        with:
+          cache-from: type=gha,scope=admin
+          cache-to: type=gha,mode=max,scope=admin
+          push: true
+          tags: |
+            nycusdc/sciedu-llm-ui:dev
+            nycusdc/sciedu-llm-ui:${{ github.sha }}
+          context: ui
+
   Deploy:
     name: Deploy
-    needs: Build-Push-Image
+    if: github.event_name != 'workflow_dispatch' || inputs.action == 'deploy'
+    needs: [Build-Push-Image, Build-Push-Admin-Image]
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger n8n Snapshot Webhook
+      - name: Deploy and configure LLM backend URL
         run: |
           curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
             --header 'Content-Type: application/json' \
@@ -189,9 +225,127 @@ jobs:
               },
               "setup_domain": {
                 "enable": true,
-                "title": "Endpoint",
+                "title": "LLM backend",
                 "name": "llm.dev.sciedu.sdc.nycu.club",
                 "value": "default-eng-deploy:internal"
+              }
+            }
+          }'
+
+      - name: Deploy and configure admin panel URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "deploy",
+            "metadata": {
+              "environment": "dev",
+              "component": "llm"
+            },
+            "setup": {
+              "inject_secret": {
+                "enable": true,
+                "project": "sciedu",
+                "environment": "dev",
+                "secrets": [
+                  {
+                    "path": "/LLM",
+                    "secret_name": "NCHC_API_KEY",
+                    "env_name": "OPENAI_API_KEY"
+                  },
+                  {
+                    "path": "/LLM",
+                    "secret_name": "LANGFUSE_SECRET_KEY",
+                    "env_name": "LANGFUSE_SECRET_KEY"
+                  },
+                  {
+                    "path": "/LLM",
+                    "secret_name": "LANGFUSE_PUBLIC_KEY",
+                    "env_name": "LANGFUSE_PUBLIC_KEY"
+                  }
+                ]
+              }
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "setup_domain": {
+                "enable": true,
+                "title": "Admin panel",
+                "name": "admin.dev.sciedu.sdc.nycu.club",
+                "value": "default-eng-deploy:internal"
+              }
+            }
+          }'
+
+  Cleanup:
+    name: Cleanup
+    if: github.event_name == 'workflow_dispatch' && inputs.action == 'cleanup'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup LLM backend URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "dev",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "llm.dev.sciedu.sdc.nycu.club"
+              }
+            }
+          }'
+
+      - name: Cleanup admin panel URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "dev",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "admin.dev.sciedu.sdc.nycu.club"
               }
             }
           }'

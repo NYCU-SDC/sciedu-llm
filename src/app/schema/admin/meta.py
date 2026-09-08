@@ -51,12 +51,15 @@ class ModelsResponse(BaseModel):
 
     ``models`` is the unfiltered upstream listing — an admin picking an eval or
     embedding model is not restricted to ``allowed_models``, which only governs
-    what `/chat` may serve.
+    what `/chat` may serve when the list is non-empty.
     """
 
     models: list[str]
     allowed_models: list[str] = Field(
-        description="Model ids the /chat endpoint is permitted to serve."
+        description=(
+            "Model ids the /chat endpoint is permitted to serve; an empty list "
+            "means every model is allowed."
+        )
     )
     defaults: ModelDefaults
 
