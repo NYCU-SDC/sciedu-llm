@@ -42,7 +42,7 @@ services:
       - "traefik.http.services.sciedu-llm-$VERSION.loadbalancer.server.port=8080"
 
   admin-panel:
-    image: nycusdc/sciedu-llm-ui:dev
+    image: "nycusdc/sciedu-llm-ui:$VERSION"
     container_name: sciedu-llm-admin-$VERSION
     networks:
       - traefik
