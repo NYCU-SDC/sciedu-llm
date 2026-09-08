@@ -24,6 +24,9 @@ jobs:
     name: Close snapshot
     if: github.event_name == 'pull_request' || inputs.pr_number != ''
     runs-on: ubuntu-latest
+    concurrency:
+      group: snapshot-${{ github.repository }}
+      cancel-in-progress: false
     env:
       PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
@@ -91,6 +94,9 @@ jobs:
     name: Close dev preview
     if: github.event_name == 'workflow_dispatch' && inputs.pr_number == '' && inputs.target == 'dev'
     runs-on: ubuntu-latest
+    concurrency:
+      group: dev-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - name: Cleanup LLM backend URL
         run: |
@@ -154,6 +160,9 @@ jobs:
     name: Close stage preview
     if: github.event_name == 'workflow_dispatch' && inputs.pr_number == '' && inputs.target == 'stage'
     runs-on: ubuntu-latest
+    concurrency:
+      group: stage-${{ github.repository }}
+      cancel-in-progress: false
     steps:
       - name: Cleanup LLM backend URL
         run: |
