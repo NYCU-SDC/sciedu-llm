@@ -1,15 +1,33 @@
-name: Close Snapshot
+name: Close Preview
 
 on:
   pull_request:
     types:
       - closed
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to clean up; leave blank to clean the dev preview
+        required: false
+        type: string
+      target:
+        description: Non-PR preview to clean up
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - stage
 
 jobs:
-  Close:
+  Close-Snapshot:
+    name: Close snapshot
+    if: github.event_name == 'pull_request' || inputs.pr_number != ''
     runs-on: ubuntu-latest
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
     steps:
-      - name: Trigger n8n Snapshot Webhook
+      - name: Cleanup snapshot URL
         run: |
           curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
             -H "Content-Type: application/json" \
@@ -20,7 +38,7 @@ jobs:
                 "repo": "${{ github.repository }}",
                 "branch": "${{ github.head_ref || github.ref_name }}",
                 "commit": "${{ github.sha }}",
-                "pr_number": "${{ github.event.pull_request.number }}"
+                "pr_number": "${{ env.PR_NUMBER }}"
               },
               "method": "cleanup",
               "metadata": {
@@ -34,7 +52,163 @@ jobs:
                 },
                 "cleanup_domain": {
                   "enable": true,
-                  "name": "llm.pr-${{ github.event.pull_request.number }}.sciedu.sdc.nycu.club"
+                  "name": "llm.pr-${{ env.PR_NUMBER }}.sciedu.sdc.nycu.club"
                 }
               }
             }'
+
+      - name: Cleanup admin snapshot URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            -H "Content-Type: application/json" \
+            -H "x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}" \
+            -d '{
+              "source": {
+                "title": "SciEdu",
+                "repo": "${{ github.repository }}",
+                "branch": "${{ github.head_ref || github.ref_name }}",
+                "commit": "${{ github.sha }}",
+                "pr_number": "${{ env.PR_NUMBER }}"
+              },
+              "method": "cleanup",
+              "metadata": {
+                "environment": "snapshot",
+                "component": "llm"
+              },
+              "post": {
+                "notify_discord": {
+                  "enable": true,
+                  "channel": "sciedu-activity"
+                },
+                "cleanup_domain": {
+                  "enable": true,
+                  "name": "admin.llm.pr-${{ env.PR_NUMBER }}.sciedu.sdc.nycu.club"
+                }
+              }
+            }'
+
+  Close-Dev:
+    name: Close dev preview
+    if: github.event_name == 'workflow_dispatch' && inputs.pr_number == '' && inputs.target == 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup LLM backend URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "dev",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "llm.dev.sciedu.sdc.nycu.club"
+              }
+            }
+          }'
+
+      - name: Cleanup admin panel URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "dev",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "admin.llm.dev.sciedu.sdc.nycu.club"
+              }
+            }
+          }'
+
+  Close-Stage:
+    name: Close stage preview
+    if: github.event_name == 'workflow_dispatch' && inputs.pr_number == '' && inputs.target == 'stage'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup LLM backend URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "stage",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "llm.stage.sciedu.sdc.nycu.club"
+              }
+            }
+          }'
+
+      - name: Cleanup admin panel URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "cleanup",
+            "metadata": {
+              "environment": "stage",
+              "component": "llm"
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "cleanup_domain": {
+                "enable": true,
+                "name": "admin.llm.stage.sciedu.sdc.nycu.club"
+              }
+            }
+          }'

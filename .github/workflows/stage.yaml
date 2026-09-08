@@ -196,3 +196,58 @@ jobs:
               }
             }
           }'
+
+      - name: Configure admin panel URL
+        run: |
+          curl -X POST --location --fail-with-body 'https://webhook.sdc.nycu.club/webhook/deploy' \
+            --header 'Content-Type: application/json' \
+            --header 'x-deploy-token: ${{ secrets.N8N_DEPLOY_TOKEN }}' \
+            --data-raw '{
+            "source": {
+              "title": "SciEdu",
+              "repo": "${{ github.repository }}",
+              "branch": "${{ github.head_ref || github.ref_name }}",
+              "commit": "${{ github.sha }}"
+            },
+            "method": "deploy",
+            "metadata": {
+              "environment": "stage",
+              "component": "llm"
+            },
+            "setup": {
+              "inject_secret": {
+                "enable": true,
+                "project": "sciedu",
+                "environment": "staging",
+                "secrets": [
+                  {
+                    "path": "/LLM",
+                    "secret_name": "NCHC_API_KEY",
+                    "env_name": "OPENAI_API_KEY"
+                  },
+                  {
+                    "path": "/LLM",
+                    "secret_name": "LANGFUSE_SECRET_KEY",
+                    "env_name": "LANGFUSE_SECRET_KEY"
+                  },
+                  {
+                    "path": "/LLM",
+                    "secret_name": "LANGFUSE_PUBLIC_KEY",
+                    "env_name": "LANGFUSE_PUBLIC_KEY"
+                  }
+                ]
+              }
+            },
+            "post": {
+              "notify_discord": {
+                "enable": true,
+                "channel": "sciedu-activity"
+              },
+              "setup_domain": {
+                "enable": true,
+                "title": "Admin panel",
+                "name": "admin.llm.stage.sciedu.sdc.nycu.club",
+                "value": "default-eng-deploy:internal"
+              }
+            }
+          }'

@@ -41,6 +41,25 @@ services:
       - "traefik.http.routers.sciedu-llm-$VERSION.tls.certresolver=cloudflare"
       - "traefik.http.services.sciedu-llm-$VERSION.loadbalancer.server.port=8080"
 
+  admin-panel:
+    image: nycusdc/sciedu-llm-ui:dev
+    container_name: sciedu-llm-admin-$VERSION
+    networks:
+      - traefik
+    restart: unless-stopped
+
+    environment:
+      BACKEND_URL: "http://llm-provider:8080"
+
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.rule=Host(`admin.llm.$VERSION.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.entrypoints=websecure"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.tls=true"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.tls.certresolver=cloudflare"
+      - "traefik.http.services.sciedu-llm-admin-$VERSION.loadbalancer.server.port=80"
+
 networks:
   traefik:
     external: true

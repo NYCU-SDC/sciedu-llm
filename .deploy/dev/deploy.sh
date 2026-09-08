@@ -1,7 +1,8 @@
 set -e
 
 current_sha=$(git rev-parse HEAD)
-remote_main_sha=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+remote_main_ref=$(git ls-remote --exit-code origin refs/heads/main)
+remote_main_sha=${remote_main_ref%%[[:space:]]*}
 
 if [ "$current_sha" != "$remote_main_sha" ]; then
     docker compose down

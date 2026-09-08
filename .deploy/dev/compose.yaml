@@ -44,7 +44,7 @@ services:
     labels:
       - "vector.enable=true"
       - "traefik.enable=true"
-      - "traefik.http.routers.sciedu-llm-admin-dev.rule=Host(`admin.dev.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-admin-dev.rule=Host(`admin.llm.dev.sciedu.sdc.nycu.club`)"
       - "traefik.http.routers.sciedu-llm-admin-dev.entrypoints=websecure"
       - "traefik.http.routers.sciedu-llm-admin-dev.tls=true"
       - "traefik.http.routers.sciedu-llm-admin-dev.tls.certresolver=cloudflare"
