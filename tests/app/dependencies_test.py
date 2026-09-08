@@ -52,11 +52,18 @@ async def test_validate_allowed_models_returns_configured_list(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_validate_allowed_models_raises_when_empty(monkeypatch):
+async def test_validate_allowed_models_allows_all_when_empty(monkeypatch, caplog):
     _install(monkeypatch, allowed="", served=["a"])
 
-    with pytest.raises(ValueError, match="No allowed models configured"):
-        await validate_allowed_models()
+    async def _unexpected_client():
+        raise AssertionError("unrestricted mode should not list upstream models")
+
+    monkeypatch.setattr(dependencies, "get_openai_client", _unexpected_client)
+
+    with caplog.at_level("INFO"):
+        assert await validate_allowed_models() == []
+
+    assert "all models are allowed" in caplog.text
 
 
 @pytest.mark.asyncio

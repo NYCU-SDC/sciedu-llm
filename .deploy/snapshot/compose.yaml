@@ -19,7 +19,6 @@ services:
       start_period: 180s
 
     environment:
-      HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
       OPENAI_DEFAULT_MODEL: "gpt-oss-120b"
@@ -41,6 +40,25 @@ services:
       - "traefik.http.routers.sciedu-llm-$VERSION.tls=true"
       - "traefik.http.routers.sciedu-llm-$VERSION.tls.certresolver=cloudflare"
       - "traefik.http.services.sciedu-llm-$VERSION.loadbalancer.server.port=8080"
+
+  admin-panel:
+    image: "nycusdc/sciedu-llm-ui:$VERSION"
+    container_name: sciedu-llm-admin-$VERSION
+    networks:
+      - traefik
+    restart: unless-stopped
+
+    environment:
+      BACKEND_URL: "http://llm-provider:8080"
+
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.rule=Host(`admin.llm.$VERSION.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.entrypoints=websecure"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.tls=true"
+      - "traefik.http.routers.sciedu-llm-admin-$VERSION.tls.certresolver=cloudflare"
+      - "traefik.http.services.sciedu-llm-admin-$VERSION.loadbalancer.server.port=80"
 
 networks:
   traefik:

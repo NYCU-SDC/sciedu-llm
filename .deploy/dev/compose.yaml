@@ -5,12 +5,6 @@ services:
     networks:
       - traefik
     restart: unless-stopped
-    # uvicorn opens its listening socket only *after* the app's lifespan has run
-    # — the model allow-list check, the corpus index build, the preset warm — so
-    # "container running" is not "service answering", and traefik routing to it
-    # early means 502s for whoever is watching the deploy. `deploy.sh` waits on
-    # this healthcheck instead. `start_period` covers the index build: failures
-    # inside it leave the container "starting" rather than marking it unhealthy.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
       interval: 10s
@@ -19,18 +13,13 @@ services:
       start_period: 180s
 
     environment:
-      HOST: 0.0.0.0
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_BASE_URL: "https://portal.genai.nchc.org.tw/api"
-      OPENAI_DEFAULT_MODEL: "gpt-oss-120b"
-      ALLOWED_MODELS: "gpt-oss-120b,gemma-4-31B-it"
+      OPENAI_DEFAULT_MODEL: "gemma-4-31B-it"
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
       LANGFUSE_BASE_URL: "https://langfuse-sciedu.sdc.nycu.club"
       LANGFUSE_TRACING_ENVIRONMENT: dev
-      # INFO is what makes a deploy legible: the corpus datasets as they are
-      # collected, embedding progress every few seconds, and the totals when the
-      # index lands. Drop to WARNING for a quiet log.
       LOG_LEVEL: INFO
 
     labels:
@@ -41,6 +30,25 @@ services:
       - "traefik.http.routers.sciedu-llm-dev.tls=true"
       - "traefik.http.routers.sciedu-llm-dev.tls.certresolver=cloudflare"
       - "traefik.http.services.sciedu-llm-dev.loadbalancer.server.port=8080"
+
+  admin-panel:
+    image: nycusdc/sciedu-llm-ui:dev
+    container_name: sciedu-llm-admin-dev
+    networks:
+      - traefik
+    restart: unless-stopped
+
+    environment:
+      BACKEND_URL: "http://llm-provider:8080"
+
+    labels:
+      - "vector.enable=true"
+      - "traefik.enable=true"
+      - "traefik.http.routers.sciedu-llm-admin-dev.rule=Host(`admin.llm.dev.sciedu.sdc.nycu.club`)"
+      - "traefik.http.routers.sciedu-llm-admin-dev.entrypoints=websecure"
+      - "traefik.http.routers.sciedu-llm-admin-dev.tls=true"
+      - "traefik.http.routers.sciedu-llm-admin-dev.tls.certresolver=cloudflare"
+      - "traefik.http.services.sciedu-llm-admin-dev.loadbalancer.server.port=80"
 
 networks:
   traefik:

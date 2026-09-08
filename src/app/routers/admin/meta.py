@@ -42,9 +42,9 @@ def _resources(pairs: list[tuple[str, str]]) -> list[NamedResource]:
     summary="List the models the upstream server advertises",
     description=(
         "Returns every model id from the configured OpenAI-compatible server, "
-        "unfiltered — `ALLOWED_MODELS` only constrains `/chat`, not which model "
-        "an admin may evaluate or embed with, so it is reported alongside rather "
-        "than applied."
+        "unfiltered — a non-empty `ALLOWED_MODELS` only constrains `/chat`, not "
+        "which model an admin may evaluate or embed with, so it is reported "
+        "alongside rather than applied. An empty list means all models are allowed."
     ),
     responses=UPSTREAM_RESPONSES,
 )

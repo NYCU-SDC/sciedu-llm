@@ -10,10 +10,10 @@ class ChatRequest(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description=(
-            "Optional model id to use for this completion. Must be one of the "
-            "server's configured allowed models (ALLOWED_MODELS); requests for any "
-            "other model are rejected with a 400. When omitted, the server default "
-            "(OPENAI_DEFAULT_MODEL) is used."
+            "Optional model id to use for this completion. When ALLOWED_MODELS is "
+            "configured, it must be in that list or the request is rejected with "
+            "a 400. When ALLOWED_MODELS is empty, every model is allowed. When the "
+            "request omits a model, OPENAI_DEFAULT_MODEL is used."
         ),
     )
     enable_rag: bool = Field(
@@ -77,7 +77,7 @@ CHAT_RESPONSE: dict[int | str, dict[str, Any]] = {
         }
     },
     400: {
-        "description": "Bad Request - Requested model is not in the allowed models list",
+        "description": "Bad Request - Requested model is outside the configured allow-list",
         "content": {
             "application/json": {
                 "example": {

@@ -82,9 +82,8 @@ async def chat(
 ):
     model = request.model or settings.openai_default_model
 
-    # Enforce the configured allow-list. Startup validation guarantees it is
-    # non-empty in a real deployment, so an empty list here means the endpoint is
-    # running unconfigured (e.g. in tests) and no restriction is applied.
+    # Enforce the configured allow-list. An absent or empty ALLOWED_MODELS means
+    # every model is allowed, so no restriction is applied in that mode.
     #
     # This stays a 400 rather than the preset machinery's 503: here the model is
     # *client* input, so an unknown one is a bad request.

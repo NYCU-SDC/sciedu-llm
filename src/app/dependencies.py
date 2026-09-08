@@ -25,10 +25,9 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default=...)
     openai_default_model: str = "gpt-oss-120b"
 
-    # Comma-separated list of model ids the /chat endpoint is permitted to serve.
-    # Read from ALLOWED_MODELS. Must be non-empty — the app refuses to start
-    # otherwise (see `validate_allowed_models`). Requests asking for a model
-    # outside this list are rejected with a 400.
+    # Optional comma-separated list of model ids the /chat endpoint is permitted
+    # to serve. An empty value means every model is allowed. When configured,
+    # requests asking for a model outside this list are rejected with a 400.
     allowed_models: str = ""
 
     chat_title_prompt_name: str = "app/chat-title-generator"
@@ -160,21 +159,19 @@ langfuse_dependency = Annotated[Langfuse, Depends(get_langfuse_client)]
 
 
 async def validate_allowed_models() -> list[str]:
-    """Validate the configured ALLOWED_MODELS at startup.
+    """Validate a configured ``ALLOWED_MODELS`` list at startup.
 
-    Ensures at least one model is configured (raising ``ValueError`` otherwise) and
-    warns for any allowed model that the upstream OpenAI-compatible server does not
-    advertise via its ``/models`` endpoint. A failed listing only logs — the models
-    endpoint is best-effort and should not block startup. Returns the validated
-    list of allowed model names. Called once from the app lifespan.
+    An empty list is the unrestricted mode, so no upstream listing is needed.
+    Otherwise, warn for any allowed model that the OpenAI-compatible server does
+    not advertise via its ``/models`` endpoint. A failed listing only logs — the
+    models endpoint is best-effort and should not block startup. Returns the
+    configured list, or ``[]`` when every model is allowed.
     """
     settings = get_settings()
     allowed = settings.allowed_model_names
     if not allowed:
-        raise ValueError(
-            "No allowed models configured. Set ALLOWED_MODELS to a comma-separated "
-            "list of model ids the /chat endpoint is permitted to serve."
-        )
+        logger.info("ALLOWED_MODELS is not configured; all models are allowed")
+        return []
 
     client = await get_openai_client()
     try:

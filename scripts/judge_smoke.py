@@ -4,9 +4,9 @@ Builds the pipeline from the biology corpus dataset on Langfuse, then runs the
 judge module against the `questions-biology` question dataset and prints the
 per-dataset summary plus the Langfuse dataset run URL.
 
-Reads `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL`,
-`JUDGE_MODEL` (optional, defaults to `OPENAI_DEFAULT_MODEL`), and the usual
-Langfuse credentials from the environment (or `.env`).
+Reads `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_DEFAULT_MODEL`, and the usual
+Langfuse credentials from the environment (or `.env`). The same model is used
+for evaluation and judging.
 
 Usage:
     uv run python scripts/judge_smoke.py
@@ -57,7 +57,6 @@ async def main() -> None:
     )
 
     eval_model = os.getenv("OPENAI_DEFAULT_MODEL", "gpt-oss-120b")
-    judge_model = os.getenv("JUDGE_MODEL", eval_model)
 
     openai_client = AsyncOpenAI()  # picks up OPENAI_API_KEY / OPENAI_BASE_URL
     langfuse_client = init_langfuse_client()
@@ -79,7 +78,7 @@ async def main() -> None:
         pipeline=pipeline,
         openai=openai_client,
         langfuse=langfuse_client,
-        judge_model=judge_model,
+        judge_model=eval_model,
         eval_model=eval_model,
         judge_prompts=judge_prompts,
         k=K,
@@ -87,7 +86,7 @@ async def main() -> None:
 
     print(
         f"\nRunning judge on {QUESTION_DATASETS} | "
-        f"eval={eval_model} judge={judge_model} k={K}"
+        f"eval={eval_model} judge={eval_model} k={K}"
     )
     print(f"Session ID: {judge.session_id}")
 
