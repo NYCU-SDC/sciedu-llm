@@ -9,8 +9,8 @@ def test_indexing_throughput_default_values(monkeypatch):
 
     config = RAGConfig(_env_file=None)
 
-    assert config.embedding_batch_size == 128
-    assert config.max_concurrency == 128
+    assert config.embedding_batch_size == 64
+    assert config.max_concurrency == 64
 
 
 def test_retrieval_knobs_default_values(monkeypatch):
