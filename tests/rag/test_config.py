@@ -3,6 +3,16 @@ import pytest
 from rag.config import RAGConfig
 
 
+def test_indexing_throughput_default_values(monkeypatch):
+    monkeypatch.delenv("RAG_EMBEDDING_BATCH_SIZE", raising=False)
+    monkeypatch.delenv("RAG_MAX_CONCURRENCY", raising=False)
+
+    config = RAGConfig(_env_file=None)
+
+    assert config.embedding_batch_size == 128
+    assert config.max_concurrency == 128
+
+
 def test_retrieval_knobs_default_values(monkeypatch):
     for name in (
         "RAG_BM25_TOP_N",

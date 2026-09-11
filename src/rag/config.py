@@ -9,8 +9,8 @@ class RAGConfig(BaseSettings):
 
     embedding_model: str = "bge-m3"
     rerank_model: str = "BGE-Reranker-V2-M3"
-    embedding_batch_size: int = Field(default=64, gt=0)
-    max_concurrency: int = Field(default=64, gt=0)
+    embedding_batch_size: int = Field(default=128, gt=0)
+    max_concurrency: int = Field(default=128, gt=0)
     chunk_size: int = Field(default=500, gt=0)
     chunk_overlap: int = Field(default=100, ge=0)
     generator_system_prompt_name: str = "rag-generator-system"
