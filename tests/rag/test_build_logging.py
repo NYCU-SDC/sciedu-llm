@@ -1,20 +1,12 @@
-"""What a build says about itself while it runs.
-
-A real re-index is minutes of embedding calls with no upstream progress signal,
-so the service log is the only place an operator can watch one. These assert the
-lines that make that possible — the settings a build started with, each dataset
-as it is collected, how many embedding batches have come back, and the totals at
-the end — because "the build is logged" is a feature, not an implementation
-detail, and silence would look identical to a hang.
-"""
+"""Progress and lifecycle reporting for index builds."""
 
 import logging
 import re
+import threading
 from types import SimpleNamespace
 
 import pytest
 
-from rag import pipeline as pipeline_module
 from rag.config import RAGConfig
 from rag.pipeline import RAGPipeline
 
@@ -61,57 +53,48 @@ def _pipeline() -> RAGPipeline:
 
 
 @pytest.mark.asyncio
-async def test_build_logs_its_settings_datasets_progress_and_totals(
-    caplog, monkeypatch
-):
-    # Progress is throttled to one line every few seconds in production; at zero
-    # every batch reports, which is what makes the cadence assertable at all.
-    monkeypatch.setattr(pipeline_module, "_PROGRESS_INTERVAL_SECONDS", 0.0)
-
+async def test_build_uses_tqdm_and_logs_its_settings_and_totals(caplog, capsys):
     with caplog.at_level(logging.INFO, logger="rag.pipeline"):
         await _pipeline().build(["corpus/a", "corpus/b"])
 
     text = caplog.text
+    progress = capsys.readouterr().err
 
     # What it is about to do, in enough detail to tell two rebuilds apart.
     assert "Index build starting" in text
     assert "datasets=corpus/a, corpus/b" in text
     assert "chunk_size=20" in text
 
-    # Each dataset as it lands — the slow part before embedding even starts.
-    assert "Collected dataset 1/2 'corpus/a'" in text
-    assert "Collected dataset 2/2 'corpus/b'" in text
-
-    # Periodic progress, ending on a line that accounts for every batch.
-    progress = re.findall(r"Embedding (\d+)/(\d+) batches \((\d+)/(\d+) chunks", text)
-    assert progress, f"no embedding progress was logged:\n{text}"
-    done, total, chunks, total_chunks = progress[-1]
-    assert done == total and chunks == total_chunks
-    assert [int(entry[0]) for entry in progress] == list(range(1, int(total) + 1))
+    # Both asynchronous phases expose tqdm progress without replacing lifecycle
+    # and summary messages from the logging module.
+    assert "Fetching RAG datasets" in progress
+    assert "Embedding RAG chunks" in progress
 
     # And the totals, so a finished build is unambiguous in the log.
     assert re.search(
-        rf"Index build finished \| {total_chunks} chunk\(s\), 2 chapter\(s\) "
+        r"Index build finished \| \d+ chunk\(s\), 2 chapter\(s\) "
         r"from 2 dataset\(s\) in \d+s",
         text,
     )
 
 
 @pytest.mark.asyncio
-async def test_embedding_progress_is_throttled_to_one_line_per_interval(
-    caplog, monkeypatch
-):
-    """The default interval is long, so a quick build logs progress once: at the end.
+async def test_build_fetches_datasets_in_parallel():
+    barrier = threading.Barrier(len(CHAPTERS))
 
-    Without this the log would carry a line per batch — hundreds of them for a
-    real corpus, which is how a useful signal becomes noise nobody reads.
-    """
-    monkeypatch.setattr(pipeline_module, "_PROGRESS_INTERVAL_SECONDS", 3600.0)
+    def get_dataset(name):
+        # A sequential implementation times out here on its first fetch. Both
+        # calls must be in worker threads together before either can return.
+        barrier.wait(timeout=2)
+        return _fake_langfuse().get_dataset(name)
 
-    with caplog.at_level(logging.INFO, logger="rag.pipeline"):
-        await _pipeline().build(["corpus/a", "corpus/b"])
+    pipeline = _pipeline()
+    pipeline._langfuse = SimpleNamespace(get_dataset=get_dataset)
 
-    progress = re.findall(r"Embedding (\d+)/(\d+) batches", caplog.text)
-    assert len(progress) == 1
-    done, total = progress[0]
-    assert done == total
+    await pipeline.build(["corpus/a", "corpus/b"])
+
+    # gather returns results in input order even if requests finish out of order,
+    # so parallel fetching must not make stable chunk IDs nondeterministic.
+    chapter_one = pipeline.resolve_chunks("ch1", 0, 10_000)
+    chapter_two = pipeline.resolve_chunks("ch2", 0, 10_000)
+    assert max(chapter_one) < min(chapter_two)

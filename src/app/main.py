@@ -1,6 +1,7 @@
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -43,37 +44,56 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
+async def _build_rag_in_background(app: FastAPI) -> None:
+    """Build and publish the initial RAG pipeline after the app starts serving."""
+    logger = logging.getLogger(__name__)
+    try:
+        pipeline = await build_rag_pipeline()
+    except asyncio.CancelledError:
+        logger.info("Initial RAG index build cancelled by shutdown")
+        raise
+    except Exception:
+        # RAG is optional. An embedding/backend failure must not take down an
+        # otherwise healthy chat service after startup has already completed.
+        logger.exception("Initial RAG index build failed; RAG remains disabled")
+        return
+
+    if pipeline is None:
+        logger.info(
+            "RAG remains disabled — no corpus datasets configured "
+            "(RAG_CORPUS_DATASETS) and none discovered under the corpus folder"
+        )
+        return
+
+    # Publish the manager first so the moment request dependencies can see the
+    # pipeline they can also see the matching manager. There is no interval in
+    # which a half-built pipeline is exposed: RAGPipeline.build installs its
+    # indexes only after every embedding has completed.
+    app.state.rag_build_manager = RagBuildManager(pipeline)
+    app.state.rag_pipeline = pipeline
+    logger.info(
+        "RAG enabled after background index build from corpus datasets: %s",
+        ", ".join(pipeline.corpus_dataset_names),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()  # Forces loading of settings
     logger = logging.getLogger(__name__)
+
+    # Requests initially observe RAG as disabled. The corpus is deliberately
+    # built only after startup yields control to Uvicorn, then published as one
+    # fully-built pipeline by `_build_rag_in_background`.
+    app.state.rag_pipeline = None
+    app.state.rag_build_manager = None
+    app.state.rag_startup_task = None
 
     allowed_models = await validate_allowed_models()
     if allowed_models:
         logger.info("Allowed chat models: %s", allowed_models)
     else:
         logger.info("Allowed chat models: all upstream models")
-
-    app.state.rag_pipeline = await build_rag_pipeline()
-    # Later rebuilds go through the manager, which runs them as a background task
-    # so the admin request that asks for one is not held open for the whole
-    # re-index (and can be cancelled). The startup build above is deliberately
-    # not one of them: the app should not start serving on a half-built index.
-    app.state.rag_build_manager = (
-        RagBuildManager(app.state.rag_pipeline)
-        if app.state.rag_pipeline is not None
-        else None
-    )
-    if app.state.rag_pipeline is not None:
-        logger.info(
-            "RAG pipeline built from corpus datasets: %s",
-            settings.rag_corpus_dataset_names,
-        )
-    else:
-        logger.info(
-            "RAG disabled — no corpus datasets configured (RAG_CORPUS_DATASETS) "
-            "and none discovered under the corpus folder"
-        )
 
     # Put the shipped defaults in the preset dataset so an operator can see and
     # edit them. Existing items are left exactly as they are — a default that
@@ -119,10 +139,19 @@ async def lifespan(app: FastAPI):
     # with it — otherwise shutdown would strand in-flight runs mid-experiment.
     app.state.eval_runner = EvalRunner(await get_openai_client(), get_langfuse_client())
 
-    logger.info("Application successfully started")
+    app.state.rag_startup_task = asyncio.create_task(
+        _build_rag_in_background(app), name="rag-initial-build"
+    )
+    logger.info("Application successfully started; RAG is initially disabled")
     yield
 
     app.state.eval_runner.shutdown()
+    rag_startup_task = app.state.rag_startup_task
+    if rag_startup_task is not None:
+        if not rag_startup_task.done():
+            rag_startup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await rag_startup_task
     if app.state.rag_build_manager is not None:
         app.state.rag_build_manager.shutdown()
 

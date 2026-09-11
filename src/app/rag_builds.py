@@ -20,8 +20,8 @@ for the GC — do not "clean up" the apparently-unused field.
 
 State is in-memory only: a restart forgets the last build's outcome. What this
 carries is job-level — running, cancelled, failed, how long — while the work-level
-detail (datasets collected, batches embedded, an extrapolated time left) goes to
-the service log from `rag.pipeline`, which is where a long build is watched.
+detail (dataset fetches and embedding batches) goes to tqdm alongside the service
+log from `rag.pipeline`, which is where a long build is watched.
 """
 
 import asyncio
@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class BuildStatus(StrEnum):
-    #: Nothing has been built through this manager (the startup build does not
+    #: Nothing has been built through this manager (the initial build does not
     #: go through it) — the pipeline may still be serving indexes.
     IDLE = "idle"
     BUILDING = "building"
@@ -87,7 +87,7 @@ class RagBuildManager:
         self._state = BuildState()
         self._task: asyncio.Task | None = None
         # The build-time settings the *installed* indexes were built with: seeded
-        # from the pipeline as handed over (the startup build), re-read after every
+        # from the pipeline as handed over (the initial build), re-read after every
         # build that lands, and put back when one is abandoned. See
         # `_restore_build_time_config`.
         self._committed = self._build_time_config()

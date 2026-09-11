@@ -7,6 +7,8 @@ import numpy as np
 from langfuse import Langfuse
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
+from tqdm.asyncio import tqdm_asyncio
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from rag.chunker import CorpusChunker
 from rag.config import RAGConfig, get_rag_config
@@ -21,57 +23,12 @@ logger = logging.getLogger(__name__)
 # to mean "unlimited" while omitting the kwarg pulls the configured default.
 _UNSET: Any = object()
 
-#: How often the embedding pass reports how far along it is. A real corpus is
-#: hundreds of batches, so one line each would bury everything else in the log;
-#: a line every few seconds is enough to tell a slow build from a stuck one.
-_PROGRESS_INTERVAL_SECONDS = 10.0
-
 
 def _format_seconds(value: float) -> str:
     total = max(0, round(value))
     if total < 60:
         return f"{total}s"
     return f"{total // 60}m {total % 60:02d}s"
-
-
-class _EmbedProgress:
-    """Throttled progress logging for the embedding pass of a build.
-
-    Embedding is one long `asyncio.gather` over batches, so how many of them have
-    come back is the only progress there is to report — there is no byte count,
-    no server-side percentage. The remaining time is a straight extrapolation
-    from the rate so far, and is logged as such rather than as a promise.
-    """
-
-    def __init__(self, *, batches: int, chunks: int) -> None:
-        self._batches = batches
-        self._chunks = chunks
-        self._done = 0
-        self._embedded = 0
-        self._started = time.monotonic()
-        self._last_logged = self._started
-
-    def batch_done(self, size: int) -> None:
-        self._done += 1
-        self._embedded += size
-        now = time.monotonic()
-        final = self._done >= self._batches
-        if not final and now - self._last_logged < _PROGRESS_INTERVAL_SECONDS:
-            return
-        self._last_logged = now
-        elapsed = now - self._started
-        share = self._done / self._batches if self._batches else 1.0
-        left = (elapsed / share - elapsed) if share > 0 else 0.0
-        logger.info(
-            "Embedding %d/%d batches (%d/%d chunks, %.0f%%) — %s elapsed%s",
-            self._done,
-            self._batches,
-            self._embedded,
-            self._chunks,
-            share * 100,
-            _format_seconds(elapsed),
-            "" if final else f", ~{_format_seconds(left)} left at this rate",
-        )
 
 
 class RAGPipeline:
@@ -155,11 +112,25 @@ class RAGPipeline:
         chunker = CorpusChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
         total_datasets = len(corpus_dataset_names)
-        for position, name in enumerate(corpus_dataset_names, start=1):
-            # The Langfuse SDK call is blocking; off-loop so a build (minutes of
-            # them, for a real corpus) neither stalls the server nor sits at an
-            # uncancellable point while an operator is asking it to stop.
-            dataset = await asyncio.to_thread(self._langfuse.get_dataset, name)
+        logger.info("Fetching %d corpus dataset(s) from Langfuse", total_datasets)
+        # Langfuse's SDK is blocking, so fetch every corpus concurrently in
+        # worker threads. tqdm_asyncio.gather preserves the configured order,
+        # which keeps chapter/chunk IDs stable even when requests finish out of
+        # order. Redirect logging while the bar is active so warnings and server
+        # logs do not overwrite it.
+        with logging_redirect_tqdm(tqdm_class=tqdm_asyncio):
+            datasets = await tqdm_asyncio.gather(
+                *(
+                    asyncio.to_thread(self._langfuse.get_dataset, name)
+                    for name in corpus_dataset_names
+                ),
+                total=total_datasets,
+                desc="Fetching RAG datasets",
+                unit="dataset",
+                disable=not logger.isEnabledFor(logging.INFO),
+            )
+
+        for name, dataset in zip(corpus_dataset_names, datasets, strict=True):
             for item in dataset.items:
                 metadata = item.metadata or {}
                 payload = item.input or {}
@@ -173,15 +144,6 @@ class RAGPipeline:
                     )
                     continue
                 chunker.add_chapter(chapter, content)
-
-            logger.info(
-                "Collected dataset %d/%d '%s' — %d chunk(s) so far, %s elapsed",
-                position,
-                total_datasets,
-                name,
-                len(chunker.chunks),
-                _format_seconds(time.monotonic() - started),
-            )
 
         if not chunker.chunks:
             raise ValueError(
@@ -457,13 +419,14 @@ class RAGPipeline:
             texts[offset : offset + batch_size]
             for offset in range(0, len(texts), batch_size)
         ]
-        progress = _EmbedProgress(batches=len(batches), chunks=len(texts))
-        results = await asyncio.gather(
-            *(
-                self._embed_batch(batch, semaphore=semaphore, progress=progress)
-                for batch in batches
+        with logging_redirect_tqdm(tqdm_class=tqdm_asyncio):
+            results = await tqdm_asyncio.gather(
+                *(self._embed_batch(batch, semaphore=semaphore) for batch in batches),
+                total=len(batches),
+                desc="Embedding RAG chunks",
+                unit="batch",
+                disable=not logger.isEnabledFor(logging.INFO),
             )
-        )
         vectors = [
             embedding for batch_vectors in results for embedding in batch_vectors
         ]
@@ -473,11 +436,8 @@ class RAGPipeline:
         self,
         batch: list[str],
         semaphore: asyncio.Semaphore | None = None,
-        progress: "_EmbedProgress | None" = None,
     ) -> list[list[float]]:
         response = await self._embed_call(batch, semaphore=semaphore)
-        if progress is not None:
-            progress.batch_done(len(batch))
         return [item.embedding for item in response.data]
 
     @with_openai_retry()
