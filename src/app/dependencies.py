@@ -57,8 +57,9 @@ class Settings(BaseSettings):
 
     # Comma-separated Langfuse corpus dataset names to index for RAG-enabled chat.
     # Read from RAG_CORPUS_DATASETS. Optional: when empty, every dataset under
-    # the corpus folder is discovered from Langfuse at startup instead (see
-    # `build_rag_pipeline`). RAG is disabled only when neither yields a dataset.
+    # the corpus folder is discovered from Langfuse by the post-startup background
+    # build instead (see `build_rag_pipeline`). RAG is disabled until that build
+    # succeeds, and remains disabled when neither source yields a dataset.
     rag_corpus_datasets: str = ""
 
     # How far back `GET /admin/evals/history` looks. Not a preference: Langfuse's
@@ -137,7 +138,8 @@ async def get_openai_client() -> AsyncOpenAI:
 
     Objects that *hold* a client rather than asking for one each time (the eval
     runner, a `RAGPipeline`) capture the loop they were built on — which is the
-    app's loop, since both are built in the lifespan.
+    app's loop, since the runner is built in the lifespan and the pipeline in a
+    task spawned from it.
     """
     loop = asyncio.get_running_loop()
     client = _openai_clients.get(loop)
@@ -197,7 +199,7 @@ async def validate_allowed_models() -> list[str]:
 
 
 async def build_rag_pipeline() -> RAGPipeline | None:
-    """Build the RAG pipeline from the corpus datasets at startup.
+    """Build the RAG pipeline from the configured or discovered corpus datasets.
 
     ``RAG_CORPUS_DATASETS`` pins the set when it is configured. When it is not,
     every dataset under the corpus folder is discovered from Langfuse, so a
@@ -205,10 +207,11 @@ async def build_rag_pipeline() -> RAGPipeline | None:
     keep the list in sync. Returns ``None`` — RAG disabled — when neither yields
     a dataset, including when discovery itself fails: an unreachable Langfuse
     must leave the server up and answering ``enable_rag`` requests with the
-    documented 503, not stuck at boot.
+    documented 503, not take down the service.
 
-    Called once from the app lifespan; the built pipeline is stashed on
-    ``app.state`` and served via ``get_rag_pipeline``.
+    Called once by the background task the app lifespan schedules immediately
+    before it starts serving. The caller publishes the completed pipeline on
+    ``app.state``; this function never exposes a partially-built pipeline.
     """
     settings = get_settings()
     names = settings.rag_corpus_dataset_names or await _discover_corpus_datasets(

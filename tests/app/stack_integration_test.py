@@ -68,7 +68,7 @@ def base_url():
         # the fake stack on :8000 does not collide with the suite.
         port=0,
         log_level="warning",
-        # The app's lifespan builds a RAG index and validates models upstream.
+        # The app's lifespan schedules a RAG index build and validates models upstream.
         # `build_fake_app` already neutralises it; this makes sure uvicorn does
         # not run one at all.
         lifespan="off",
