@@ -162,7 +162,7 @@ export function EvalsScreen() {
         });
     };
 
-    const modelIds = models.data?.models ?? [];
+    const modelIds = models.data?.models.map((model) => model.id) ?? [];
 
     return (
         <>

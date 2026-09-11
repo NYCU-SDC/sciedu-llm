@@ -49,12 +49,20 @@ def _langfuse(*, prompts=None, datasets=None) -> SimpleNamespace:
     )
 
 
-def _openai(model_ids: list[str] | None = None, *, exc: Exception | None = None):
+def _openai(
+    models: list[str | tuple[str, str | None]] | None = None,
+    *,
+    exc: Exception | None = None,
+):
     async def _stream():
         if exc is not None:
             raise exc
-        for model_id in model_ids or []:
-            yield SimpleNamespace(id=model_id)
+        for model in models or []:
+            if isinstance(model, str):
+                yield SimpleNamespace(id=model)
+            else:
+                model_id, model_mode = model
+                yield SimpleNamespace(id=model_id, model_mode=model_mode)
 
     return SimpleNamespace(models=SimpleNamespace(list=lambda: _stream()))
 
@@ -149,18 +157,30 @@ async def test_list_dataset_names_raises_on_failure():
 
 
 @pytest.mark.asyncio
-async def test_list_model_ids_returns_sorted_ids():
+async def test_list_models_returns_sorted_ids_and_modes():
     # `openai.models.list()` returns an AsyncPaginator (not a coroutine);
     # the implementation must iterate it with `async for`.
-    ids = await listings.list_model_ids(_openai(["zeta-7b", "bge-m3", "alpha-1"]))
+    models = await listings.list_models(
+        _openai(
+            [
+                ("zeta-7b", "chat"),
+                ("bge-m3", "embedding"),
+                "alpha-1",
+            ]
+        )
+    )
 
-    assert ids == ["alpha-1", "bge-m3", "zeta-7b"]
+    assert models == [
+        listings.ListedModel(id="alpha-1", model_mode=None),
+        listings.ListedModel(id="bge-m3", model_mode="embedding"),
+        listings.ListedModel(id="zeta-7b", model_mode="chat"),
+    ]
 
 
 @pytest.mark.asyncio
-async def test_list_model_ids_raises_on_failure():
+async def test_list_models_raises_on_failure():
     with pytest.raises(RuntimeError, match="upstream 503"):
-        await listings.list_model_ids(_openai(exc=RuntimeError("upstream 503")))
+        await listings.list_models(_openai(exc=RuntimeError("upstream 503")))
 
 
 # --- list_experiment_runs ---------------------------------------------------
@@ -348,14 +368,27 @@ def overrides():
 
 
 def test_get_models_reports_full_listing_and_defaults(client, overrides):
-    overrides(get_openai_client, _openai(["zeta-7b", "bge-m3", "alpha-1"]))
+    overrides(
+        get_openai_client,
+        _openai(
+            [
+                ("zeta-7b", "chat"),
+                ("bge-m3", "embedding"),
+                "alpha-1",
+            ]
+        ),
+    )
 
     response = client.get("/admin/models")
 
     assert response.status_code == 200
     body = response.json()
     # Unfiltered: ALLOWED_MODELS governs /chat, not what an admin may evaluate with.
-    assert body["models"] == ["alpha-1", "bge-m3", "zeta-7b"]
+    assert body["models"] == [
+        {"id": "alpha-1", "model_mode": None},
+        {"id": "bge-m3", "model_mode": "embedding"},
+        {"id": "zeta-7b", "model_mode": "chat"},
+    ]
     assert body["allowed_models"] == ["alpha-1", "bge-m3"]
     rag_config = get_rag_config()
     assert body["defaults"] == {

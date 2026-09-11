@@ -130,7 +130,7 @@ export function PresetEditorScreen() {
         );
     };
 
-    const availableModels = models.data?.models ?? [];
+    const availableModels = models.data?.models.map((model) => model.id) ?? [];
     const allowed = models.data?.allowed_models ?? [];
     const promptOptions = prompts.data ?? [];
     const renamed = !isNew && detail && preset.name !== detail.name;

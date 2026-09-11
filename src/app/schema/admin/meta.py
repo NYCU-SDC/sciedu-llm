@@ -47,15 +47,28 @@ class ModelDefaults(BaseModel):
     rerank_model: str
 
 
+class ModelInfo(BaseModel):
+    """One model advertised by the upstream OpenAI-compatible server."""
+
+    id: str
+    model_mode: str | None = Field(
+        description=(
+            "The upstream server's model category, such as chat or embedding; "
+            "null when the server does not provide one."
+        )
+    )
+
+
 class ModelsResponse(BaseModel):
     """Every model the upstream server advertises, plus this server's policy.
 
-    ``models`` is the unfiltered upstream listing — an admin picking an eval or
-    embedding model is not restricted to ``allowed_models``, which only governs
-    what `/chat` may serve when the list is non-empty.
+    ``models`` is the unfiltered upstream listing, including its model modes. An
+    admin picking an eval or embedding model is not restricted to
+    ``allowed_models``, which only governs what `/chat` may serve when the list
+    is non-empty.
     """
 
-    models: list[str]
+    models: list[ModelInfo]
     allowed_models: list[str] = Field(
         description=(
             "Model ids the /chat endpoint is permitted to serve; an empty list "
