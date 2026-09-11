@@ -110,7 +110,7 @@ message naming exactly that, instead of failing deep inside a screen.
 | `/evals`                         | Evaluations        | 3. Evaluation runs                             | `POST`/`GET /admin/evals/runs`, `POST /admin/evals/runs/{id}/cancel`, `GET /admin/datasets`, `GET /admin/judge-prompts`, `GET /admin/models` |
 | `/evals/runs/:runId`             | Run detail         | 3. Evaluation runs                             | `GET /admin/evals/runs/{id}`, `GET /admin/evals/history`, cancel                                                                             |
 | `/playground`                    | Playground         | manual testing, not in `docs/admin-ui-spec.md` | `POST /agents` (SSE), `GET /admin/presets`                                                                                                   |
-| `/reference`                     | What's available   | Supporting lookups                             | `GET /admin/models`, `GET /admin/datasets`, `GET /admin/judge-prompts`                                                                       |
+| `/reference`                     | What's available   | Supporting lookups                             | `GET /admin/models`, `GET /admin/judge-prompts`                                                                                              |
 
 The top bar carries exactly those top-level entries; the preset editor and the
 run detail are sub-screens reached by opening a row. Beside them, on the right

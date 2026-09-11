@@ -200,7 +200,7 @@ export function RagScreen() {
         datasets.data?.corpus ?? [],
         live.corpus_datasets
     );
-    const modelOptions = models.data?.models ?? [];
+    const modelOptions = models.data?.models.map((model) => model.id) ?? [];
 
     return (
         <>

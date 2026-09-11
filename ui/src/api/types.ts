@@ -236,10 +236,16 @@ export interface ModelDefaults {
     rerank_model: string;
 }
 
-/** ModelsResponse. `models` is the unfiltered upstream listing;
+/** One model in the unfiltered upstream listing. */
+export interface ModelInfo {
+    id: string;
+    model_mode: string | null;
+}
+
+/** ModelsResponse. `models` is the unfiltered upstream listing with its mode;
  * `allowed_models` only governs what /chat may serve. */
 export interface ModelsResponse {
-    models: string[];
+    models: ModelInfo[];
     allowed_models: string[];
     defaults: ModelDefaults;
 }

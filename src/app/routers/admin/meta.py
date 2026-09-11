@@ -16,6 +16,7 @@ from app.schema.admin.meta import (
     UPSTREAM_RESPONSES,
     DatasetsResponse,
     ModelDefaults,
+    ModelInfo,
     ModelsResponse,
     NamedResource,
     ToolInfo,
@@ -41,7 +42,8 @@ def _resources(pairs: list[tuple[str, str]]) -> list[NamedResource]:
     response_model=ModelsResponse,
     summary="List the models the upstream server advertises",
     description=(
-        "Returns every model id from the configured OpenAI-compatible server, "
+        "Returns every model id and model mode from the configured "
+        "OpenAI-compatible server, "
         "unfiltered — a non-empty `ALLOWED_MODELS` only constrains `/chat`, not "
         "which model an admin may evaluate or embed with, so it is reported "
         "alongside rather than applied. An empty list means all models are allowed."
@@ -50,13 +52,15 @@ def _resources(pairs: list[tuple[str, str]]) -> list[NamedResource]:
 )
 async def list_models(openai: openai_dependency, settings: settings_dependency):
     try:
-        models = await listings.list_model_ids(openai)
+        models = await listings.list_models(openai)
     except Exception as e:
         raise _bad_gateway("Failed to list models", e) from e
 
     rag_config = get_rag_config()
     return ModelsResponse(
-        models=models,
+        models=[
+            ModelInfo(id=model.id, model_mode=model.model_mode) for model in models
+        ],
         allowed_models=settings.allowed_model_names,
         defaults=ModelDefaults(
             eval_model=settings.openai_default_model,

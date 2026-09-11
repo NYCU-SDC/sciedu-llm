@@ -101,13 +101,27 @@ async def list_prompt_names(langfuse: Langfuse) -> list[NamePair]:
     return [(name, name) for name in sorted(names)]
 
 
-async def list_model_ids(openai: AsyncOpenAI) -> list[str]:
-    """Return the model ids served by `OPENAI_BASE_URL/models`, sorted.
+@dataclass(frozen=True)
+class ListedModel:
+    """The upstream model fields the admin UI needs."""
+
+    id: str
+    model_mode: str | None
+
+
+async def list_models(openai: AsyncOpenAI) -> list[ListedModel]:
+    """Return models served by `OPENAI_BASE_URL/models`, sorted by id.
 
     `models.list()` returns an `AsyncPaginator`, not a coroutine — it is iterated
-    with `async for`. Raises on any upstream failure.
+    with `async for`. `model_mode` is an extension used by the configured model
+    server, so standard OpenAI-compatible responses may omit it. Raises on any
+    upstream failure.
     """
-    return sorted([model.id async for model in openai.models.list()])
+    models = [
+        ListedModel(id=model.id, model_mode=getattr(model, "model_mode", None))
+        async for model in openai.models.list()
+    ]
+    return sorted(models, key=lambda model: model.id)
 
 
 @dataclass(frozen=True)
