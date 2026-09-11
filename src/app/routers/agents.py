@@ -36,7 +36,8 @@ def _sse(event: Event) -> str:
     summary="Agentic chat completion endpoint",
     description=(
         "Runs a named *preset* — a server-owned run configuration naming the "
-        "model, the cast, each character's tools and the step budget — as a "
+        "model, teacher prompt, enabled tool sections, subagent behavior and "
+        "step budget — as a "
         "multi-step agentic loop with server-executed tools (`rag_search`, "
         "`summon_subagent`). When stream=true, returns Server-Sent Events "
         "carrying the typed part protocol (`cast`, `agent_start`, `part_start`, "

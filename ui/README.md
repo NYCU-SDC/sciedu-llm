@@ -139,18 +139,17 @@ answers and red when it does not.
 - **No automatic retries.** react-query's retry parks a query in a "paused"
   state while the tab is unfocused, which would show a permanent "Loading…"
   instead of the failure. Failures surface at once and offer "Try again".
-- **`GET /admin/tools` does not exist yet.** `useTools()` asks for it anyway and
-  falls back to `FALLBACK_TOOLS` in `src/api/types.ts`, which mirrors
-  `_REGISTRY` in `src/app/agents/tools.py` (`rag_search`, `summon_subagent`).
-  When the endpoint lands, the list goes live with no frontend change.
+- **Preset storage is tool-based.** The teacher is fixed; `tools.rag` and
+  `tools.subagents` are the editable sections. Prompt fields are populated from
+  `GET /admin/prompts`, while `GET /admin/tools` remains the backend registry
+  introspection endpoint rather than a separate editor sidebar.
 - **The preset editor is a form, and only a form.** Raw JSON authoring lives in
   one place: **Import presets** on the preset list, which takes a single document
   or an array of them, shape-checks each in the browser (`JSON.parse` plus
   `checkPresetShape`) and then writes them one `PUT /admin/presets/{name}` at a
   time so a rejection reports against the document it came from. The semantic
-  rules (tool names, what forced retrieval forbids, summoned characters needing a
-  prompt) belong to the server either way, and its 422 is rendered field by
-  field.
+  rules (forced retrieval combinations and character forcing requiring a prompt)
+  belong to the server either way, and its 422 is rendered field by field.
 - **Dataset pickers fold Langfuse's paths.** `FolderDatasetPicker` strips the
   group prefix, groups by the next segment and offers per-folder and
   select-everything checkboxes with a real indeterminate state — but every value
@@ -175,7 +174,7 @@ answers and red when it does not.
   answer folded into one assistant message (its speakers' non-internal text, the
   reasoning and tool traffic dropped).
 - **Backend content may be Traditional Chinese** (preset display names such as
-  `助教`). The app chrome stays in English, as in the mockup.
+  `老師`). The app chrome stays in English, as in the mockup.
 
 ## Layout
 

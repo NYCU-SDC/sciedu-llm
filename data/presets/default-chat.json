@@ -1,21 +1,20 @@
 {
   "name": "default-chat",
-  "description": "Assistant that decides for itself when to search the textbook, via the rag_search tool. What /chat runs for `enable_rag: true`.",
+  "description": "老師透過 rag_search 工具自行判斷何時搜尋課本。/chat 在 enable_rag 為 true 時使用此預設值。",
   "model": null,
   "max_steps": 8,
   "tool_choice": "auto",
-  "rag_mode": "off",
-  "orchestrator": "assistant",
-  "characters": [
-    {
-      "id": "assistant",
-      "display_name": "助教",
-      "role": "assistant",
+  "teacher_prompt_name": null,
+  "tools": {
+    "rag": {
+      "enable_tool": true,
+      "force": false
+    },
+    "subagents": {
+      "enable_tool": false,
+      "character_forcing": false,
       "prompt_name": null,
-      "tools": [
-        "rag_search"
-      ],
       "max_steps": 3
     }
-  ]
+  }
 }

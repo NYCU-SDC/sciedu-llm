@@ -1,32 +1,20 @@
 {
   "name": "teacher-student",
-  "description": "A teacher who can search the textbook and summon a student to answer first, then correct and extend the student's answer.",
+  "description": "老師可搜尋課本，並召喚強制套用「學生」角色的子代理人先作答。",
   "model": null,
   "max_steps": 8,
   "tool_choice": "auto",
-  "rag_mode": "off",
-  "orchestrator": "teacher",
-  "characters": [
-    {
-      "id": "teacher",
-      "display_name": "老師",
-      "role": "teacher",
-      "prompt_name": "agents/teacher-system",
-      "tools": [
-        "rag_search",
-        "summon_subagent"
-      ],
-      "max_steps": 3
+  "teacher_prompt_name": "agents/teacher-system",
+  "tools": {
+    "rag": {
+      "enable_tool": true,
+      "force": false
     },
-    {
-      "id": "student",
-      "display_name": "學生",
-      "role": "student",
+    "subagents": {
+      "enable_tool": true,
+      "character_forcing": true,
       "prompt_name": "agents/student",
-      "tools": [
-        "rag_search"
-      ],
       "max_steps": 3
     }
-  ]
+  }
 }

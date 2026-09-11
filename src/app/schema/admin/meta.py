@@ -15,14 +15,15 @@ class NamedResource(BaseModel):
 
 
 class ToolInfo(BaseModel):
-    """One server-executed tool a preset may grant a character.
+    """One server-executed tool represented by a preset tool section.
 
     The whole registry, not a filtered view: ``requires_rag`` says which entries
     a deployment without RAG cannot actually run, so a preset editor can warn
-    about the combination rather than pretend the tool does not exist.
+    about the combination rather than pretend the tool does not exist. This is
+    registry introspection; the editor's sections are defined by the preset schema.
     """
 
-    name: str = Field(description="The name a preset lists in `tools`.")
+    name: str = Field(description="The runtime function name exposed to the model.")
     description: str = Field(description="The description the model is given.")
     internal: bool = Field(
         description=(

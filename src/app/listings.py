@@ -91,6 +91,16 @@ async def list_judge_prompt_names(langfuse: Langfuse) -> list[NamePair]:
     return _filter_by_folder(names, get_judge_config().prompt_folder)
 
 
+async def list_prompt_names(langfuse: Langfuse) -> list[NamePair]:
+    """Return every Langfuse prompt name for configuration dropdowns.
+
+    Preset prompts may live in different folders and may be text or chat prompts,
+    so this deliberately does not apply the judge-specific folder filter.
+    """
+    names = await _list_all_names(langfuse.api.prompts.list, "prompts")
+    return [(name, name) for name in sorted(names)]
+
+
 async def list_model_ids(openai: AsyncOpenAI) -> list[str]:
     """Return the model ids served by `OPENAI_BASE_URL/models`, sorted.
 

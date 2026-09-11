@@ -8,8 +8,8 @@ class AgentsRequest(BaseModel):
     """What a client may decide about an agentic run: the conversation, and which
     server-owned *preset* to run it with.
 
-    Everything else — model, tools, tool_choice, step budget, whether retrieval is
-    forced, who else may speak — is named by the preset (see ``app.presets``). The
+    Everything else — model, tool sections, step budget, whether retrieval is
+    forced, and subagent behavior — is named by the preset (see ``app.presets``). The
     model's default pydantic ``extra="ignore"`` is deliberately kept so an older
     client still sending ``tools`` / ``tool_choice`` / ``max_steps`` /
     ``enable_rag`` / ``model`` gets a normal 200 with those fields dropped, rather
@@ -21,8 +21,8 @@ class AgentsRequest(BaseModel):
     preset: Optional[str] = Field(
         default=None,
         description=(
-            "Name of the preset to run. A preset decides the model, the cast, "
-            "each character's tools, the step budget and whether retrieval is "
+            "Name of the preset to run. A preset decides the model, the teacher's "
+            "tools, subagent behavior, the step budget and whether retrieval is "
             "forced. When omitted, the server default (AGENTS_DEFAULT_PRESET) is "
             "used; an unknown name is a 400 listing what is available. Legacy "
             "fields (`tools`, `tool_choice`, `max_steps`, `enable_rag`, `model`) "
@@ -82,7 +82,7 @@ AGENTS_RESPONSES: dict[int | str, dict[str, Any]] = {
                 "example": {
                     "type": "part_start",
                     "index": 0,
-                    "part": {"type": "text", "id": "p0", "agent": "assistant"},
+                    "part": {"type": "text", "id": "p0", "agent": "teacher"},
                 }
             },
             "application/json": {
@@ -94,7 +94,7 @@ AGENTS_RESPONSES: dict[int | str, dict[str, Any]] = {
                         {
                             "type": "text",
                             "id": "p0",
-                            "agent": "assistant",
+                            "agent": "teacher",
                             "text": "光合作用是…",
                         }
                     ],

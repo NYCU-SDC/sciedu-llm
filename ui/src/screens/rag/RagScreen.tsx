@@ -5,6 +5,7 @@ import { errorMessage } from "../../api/errors";
 import {
     useDatasets,
     useModels,
+    usePrompts,
     useRagConfig,
     useRagMutations,
 } from "../../api/hooks";
@@ -65,7 +66,7 @@ const KNOBS: { key: NumericKey; label: string; note: string }[] = [
     {
         key: "final_k",
         label: "最終 k",
-        note: "助理回答前實際閱讀的段落數量。",
+        note: "老師回答前實際閱讀的段落數量。",
     },
 ];
 
@@ -73,6 +74,7 @@ export function RagScreen() {
     const config = useRagConfig();
     const datasets = useDatasets();
     const models = useModels();
+    const prompts = usePrompts();
     const { apply, rebuild, cancelBuild, reset } = useRagMutations();
 
     const [draft, setDraft] = useState<RagDraft | null>(null);
@@ -247,7 +249,7 @@ export function RagScreen() {
                 <div className="col">
                     <Panel title="課程教材">
                         <p className="note" style={{ marginBottom: 14 }}>
-                            助理可引用 <span className="mono">corpus/</span>{" "}
+                            老師可引用 <span className="mono">corpus/</span>{" "}
                             下哪些 Langfuse 資料集。
                         </p>
                         {datasets.isError ? (
@@ -412,7 +414,7 @@ export function RagScreen() {
 
                     <Panel title="段落搜尋方式">
                         <p className="note" style={{ marginBottom: 14 }}>
-                            關鍵字與語意搜尋會並行執行，再將結果合併、篩選與重新排序後交給助理。
+                            關鍵字與語意搜尋會並行執行，再將結果合併、篩選與重新排序後交給老師。
                         </p>
                         <div
                             style={{
@@ -463,9 +465,10 @@ export function RagScreen() {
                                     gap: 12,
                                 }}
                             >
-                                <TextField
+                                <PromptField
                                     label="系統提示詞（Langfuse）"
                                     value={current.generator_system_prompt_name}
+                                    options={prompts.data ?? []}
                                     problem={problemFor(
                                         "generator_system_prompt_name"
                                     )}
@@ -477,9 +480,10 @@ export function RagScreen() {
                                         )
                                     }
                                 />
-                                <TextField
+                                <PromptField
                                     label="使用者提示詞（Langfuse）"
                                     value={current.generator_user_prompt_name}
+                                    options={prompts.data ?? []}
                                     problem={problemFor(
                                         "generator_user_prompt_name"
                                     )}
@@ -493,6 +497,15 @@ export function RagScreen() {
                                 提示詞內容儲存在
                                 Langfuse；這裡只指定要取得哪個提示詞。
                             </p>
+                            {prompts.isError && (
+                                <p
+                                    className="note"
+                                    style={{ color: "var(--color-alarm-ink)" }}
+                                >
+                                    無法載入提示詞清單 —{" "}
+                                    {errorMessage(prompts.error)}
+                                </p>
+                            )}
                         </Panel>
                         <Panel title="處理量">
                             <div
@@ -684,7 +697,7 @@ function Header({
         <PageHeader
             kicker="即時服務"
             title="檢索設定"
-            lede="助理回答前如何在課程教材中查找資訊。以下每項設定目前都正在使用。"
+            lede="老師回答前如何在課程教材中查找資訊。以下每項設定目前都正在使用。"
             actions={
                 // While a build is running, stopping it is the only thing worth offering
                 // — and it takes the primary slot, because a rebuild of a real corpus
@@ -756,7 +769,7 @@ function StatusBanner({
                 <div className="banner-body">
                     <div className="banner-title">
                         {stopping ? "正在停止重建" : "正在重建索引"} —
-                        在此期間助理會持續使用先前的索引
+                        在此期間老師會持續使用先前的索引
                     </div>
                     <div className="banner-line">
                         {`已耗時 ${formatDuration(build.duration_seconds)}；重建通常會需要數分鐘，在此期間你可以離開這個頁面。`}
@@ -779,7 +792,7 @@ function StatusBanner({
                 <span className="banner-led" />
                 <div className="banner-body">
                     <div className="banner-title">
-                        {pending} — 在此期間助理會持續使用先前的索引
+                        {pending} — 在此期間老師會持續使用先前的索引
                     </div>
                     <div className="banner-line">
                         重建會在服務端進行，這個請求只負責啟動它。
@@ -840,7 +853,7 @@ function StatusBanner({
                     <div className="banner-title">已停止上次的重建</div>
                     <div className="banner-line">
                         {isBuilt
-                            ? "沒有任何變更寫入索引；助理仍在使用先前的索引，下方顯示的也已還原為該索引實際使用的設定。"
+                            ? "沒有任何變更寫入索引；老師仍在使用先前的索引，下方顯示的也已還原為該索引實際使用的設定。"
                             : "目前沒有可用的索引。請確認下方設定後重新建立。"}
                     </div>
                 </div>
@@ -972,29 +985,39 @@ function NumberField({
     );
 }
 
-function TextField({
+function PromptField({
     label,
     value,
+    options,
     problem,
     disabled,
     onChange,
 }: {
     label: string;
     value: string;
+    options: NamedResource[];
     problem?: string;
     disabled?: boolean;
     onChange: (value: string) => void;
 }) {
+    const names = options.map((option) => option.name);
+    const all = names.includes(value) ? names : [value, ...names];
     return (
         <Field label={label} hint={problem ? <Bad>{problem}</Bad> : undefined}>
             {(id) => (
-                <input
+                <select
                     id={id}
                     className={`input mono${problem ? " input-invalid" : ""}`}
                     value={value}
                     disabled={disabled}
                     onChange={(event) => onChange(event.target.value)}
-                />
+                >
+                    {all.map((option) => (
+                        <option key={option} value={option}>
+                            {option}
+                        </option>
+                    ))}
+                </select>
             )}
         </Field>
     );

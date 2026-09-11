@@ -1,7 +1,7 @@
 """Run the app against a fake upstream and a fake Langfuse, for UI work.
 
 The real deployment needs NCHC credentials, a Langfuse project holding the
-preset dataset and the character prompts, and an indexed corpus. None of that is
+preset dataset and teacher/student prompts, and an indexed corpus. None of that is
 needed to exercise the protocol, so this wires the actual FastAPI app to
 stand-ins and serves it on :8000. The agent loop, the preset registry, the tool
 registry, the SSE framing and the event ordering are all the real thing.
@@ -153,8 +153,8 @@ class FakeCompletions:
 class FakePrompt:
     """Both prompt shapes a preset can name.
 
-    An orchestrator's `prompt_name` is a Langfuse *text* prompt, compiled with no
-    variables into a plain string; a summoned character's is a *chat* prompt
+    A teacher's `teacher_prompt_name` is a Langfuse *text* prompt, compiled with
+    no variables into a plain string; a forced character's is a *chat* prompt
     compiled with `task=` into a message list.
     """
 
@@ -174,28 +174,40 @@ TEACHER_STUDENT_PRESET = {
     "name": "teacher-student",
     "description": "老師先查課本，召喚學生作答，再補充訂正。",
     "max_steps": 8,
-    "orchestrator": "teacher",
-    "characters": [
-        {
-            "id": "teacher",
-            "display_name": "老師",
-            "role": "teacher",
-            "prompt_name": "agents/teacher-system",
-            "tools": ["rag_search", "summon_subagent"],
+    "teacher_prompt_name": "agents/teacher-system",
+    "tools": {
+        "rag": {
+            "enable_tool": True,
+            "force": False,
         },
-        {
-            "id": "student",
-            "display_name": "學生",
-            "role": "student",
+        "subagents": {
+            "enable_tool": True,
+            "character_forcing": True,
             "prompt_name": "agents/student",
-            "tools": ["rag_search"],
             "max_steps": 3,
         },
-    ],
+    },
 }
 
 
 class FakeLangfuse:
+    def __init__(self):
+        prompt_names = [
+            "agents/assistant-system",
+            "agents/student",
+            "agents/teacher-system",
+            "rag-generator-system",
+            "rag-generator-user",
+        ]
+        self.api = SimpleNamespace(
+            prompts=SimpleNamespace(
+                list=lambda **_kwargs: SimpleNamespace(
+                    data=[SimpleNamespace(name=name) for name in prompt_names],
+                    meta=SimpleNamespace(total_pages=1),
+                )
+            )
+        )
+
     @contextlib.contextmanager
     def start_as_current_observation(self, **_kwargs):
         yield SimpleNamespace(update=lambda **_k: None)

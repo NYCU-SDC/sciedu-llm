@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { Checkbox } from "./Checkbox";
+
 export interface Choice {
     value: string;
     label: ReactNode;
@@ -32,16 +34,13 @@ export function CheckList({
     const rows = choices.map((choice) => {
         const on = selected.includes(choice.value);
         return (
-            <label className="radio check-row" key={choice.value}>
-                <input
-                    type="checkbox"
-                    checked={on}
-                    disabled={disabled}
-                    onChange={(event) =>
-                        onToggle(choice.value, event.target.checked)
-                    }
-                />
-                <span className="dot" />
+            <Checkbox
+                className="check-row"
+                key={choice.value}
+                checked={on}
+                disabled={disabled}
+                onChange={(next) => onToggle(choice.value, next)}
+            >
                 <span style={{ flex: 1, minWidth: 0 }}>
                     {choice.label}
                     {choice.note && (
@@ -57,7 +56,7 @@ export function CheckList({
                     )}
                 </span>
                 {choice.trailing}
-            </label>
+            </Checkbox>
         );
     });
     return boxed ? (

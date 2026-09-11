@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 
 os.environ["OPENAI_API_KEY"] = "mock_key"
-os.environ["ALLOWED_MODELS"] = "gpt-oss-120b"
+os.environ["ALLOWED_MODELS"] = "gpt-oss-120b,custom-model"
 
 import httpx
 import pytest
@@ -92,6 +92,24 @@ async def test_list_judge_prompt_names_raises_on_failure():
     # caller has to be able to tell that apart from an unreachable Langfuse.
     with pytest.raises(RuntimeError, match="langfuse exploded"):
         await listings.list_judge_prompt_names(_langfuse(prompts=_boom))
+
+
+@pytest.mark.asyncio
+async def test_list_prompt_names_returns_every_prompt_and_paginates():
+    langfuse = _langfuse(
+        prompts=_paginated(
+            {
+                1: _page(["judge/zeta", "agents/student"], total_pages=2),
+                2: _page(["agents/teacher-system"], total_pages=2),
+            }
+        )
+    )
+
+    assert await listings.list_prompt_names(langfuse) == [
+        ("agents/student", "agents/student"),
+        ("agents/teacher-system", "agents/teacher-system"),
+        ("judge/zeta", "judge/zeta"),
+    ]
 
 
 @pytest.mark.asyncio
@@ -400,6 +418,26 @@ def test_get_judge_prompts_returns_502_on_upstream_failure(client, overrides):
     assert client.get("/admin/judge-prompts").status_code == 502
 
 
+def test_get_prompts_returns_all_names_for_preset_dropdowns(client, overrides):
+    overrides(
+        get_langfuse_client,
+        _langfuse(
+            prompts=_paginated(
+                {1: _page(["judge/beta", "agents/student", "agents/teacher"], 1)}
+            )
+        ),
+    )
+
+    response = client.get("/admin/prompts")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {"name": "agents/student", "label": "agents/student"},
+        {"name": "agents/teacher", "label": "agents/teacher"},
+        {"name": "judge/beta", "label": "judge/beta"},
+    ]
+
+
 def test_get_tools_reports_the_registry(client):
     # No upstream at all: the tool registry is code, so this endpoint cannot 502
     # and needs no dependency overrides.
@@ -428,7 +466,7 @@ def test_get_tools_lists_exactly_what_a_preset_may_name(client):
                 "name": "every-tool",
                 "orchestrator": "assistant",
                 "characters": [
-                    {"id": "assistant", "display_name": "助教", "tools": names},
+                    {"id": "assistant", "display_name": "老師", "tools": names},
                     {
                         "id": "student",
                         "display_name": "學生",

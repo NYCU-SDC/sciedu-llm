@@ -303,7 +303,8 @@ def test_agents_serves_the_preset_from_the_dataset(base_url):
     assert body["builtin"] is False
     assert body["shadowed_builtin"] is False
     assert body["description"] == "老師先查課本，召喚學生作答，再補充訂正。"
-    assert body["definition"]["orchestrator"] == "teacher"
+    assert body["definition"]["teacher_prompt_name"] == "agents/teacher-system"
+    assert body["definition"]["tools"]["subagents"]["character_forcing"] is True
 
 
 def test_agents_non_streaming_folds_the_same_parts(base_url, agents_stream):
