@@ -5,6 +5,7 @@ from types import SimpleNamespace
 os.environ.setdefault("OPENAI_API_KEY", "mock_key")
 
 import pytest
+from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
 from pydantic import ValidationError
 
@@ -33,8 +34,8 @@ from app.presets import (
 # preset machinery makes.
 
 
-def _item(id_: str, document):
-    return SimpleNamespace(id=id_, input=document)
+def _item(id_: str, document, *, status=DatasetStatus.ACTIVE):
+    return SimpleNamespace(id=id_, input=document, status=status)
 
 
 class _FakeDataset:
@@ -109,10 +110,18 @@ class _FailingRAGPipeline:
 
 
 def _preset(**overrides) -> dict:
-    """A minimal valid preset document, ready to be broken one field at a time."""
+    """A minimal tool-based preset, ready to be broken one field at a time."""
     document = {
         "name": "demo",
-        "characters": [{"id": "assistant", "display_name": "助教"}],
+        "tools": {
+            "rag": {"enable_tool": False, "force": False},
+            "subagents": {
+                "enable_tool": False,
+                "character_forcing": False,
+                "prompt_name": None,
+                "max_steps": 3,
+            },
+        },
     }
     document.update(overrides)
     return document
@@ -126,7 +135,34 @@ def _forced_rag_preset() -> Preset:
     schema and still supported by ``run_preset``, so a deployment can author one
     in the dataset. These tests are where that behaviour is pinned.
     """
-    return Preset.model_validate(_preset(name="forced-rag", rag_mode="forced"))
+    document = _preset(name="forced-rag")
+    document["tools"]["rag"] = {"enable_tool": True, "force": True}
+    return Preset.model_validate(document)
+
+
+def _multi_persona_preset() -> Preset:
+    document = _preset(name="multi-persona")
+    document["tools"]["subagents"] = {
+        "enable_tool": True,
+        "character_forcing": True,
+        "prompt_name": None,
+        "max_steps": 3,
+        "personas": [
+            {
+                "id": "student",
+                "display_name": "學生",
+                "prompt_name": "agents/student",
+                "max_steps": 3,
+            },
+            {
+                "id": "ta",
+                "display_name": "TA",
+                "prompt_name": "agents/ta",
+                "max_steps": 5,
+            },
+        ],
+    }
+    return Preset.model_validate(document)
 
 
 # --- schema validation ------------------------------------------------------
@@ -139,8 +175,9 @@ def test_minimal_preset_takes_the_documented_defaults():
     assert preset.max_steps == 8
     assert preset.tool_choice == "auto"
     assert preset.rag_mode == "off"
-    assert preset.orchestrator == "assistant"
-    assert preset.characters[0].role == "assistant"
+    assert preset.orchestrator == "teacher"
+    assert preset.characters[0].display_name == "老師"
+    assert preset.characters[0].role == "teacher"
     assert preset.characters[0].tools == []
     assert preset.characters[0].max_steps == 3
 
@@ -181,7 +218,13 @@ def test_preset_rejects_duplicate_character_ids():
 
 def test_preset_rejects_an_orchestrator_that_is_not_a_character():
     with pytest.raises(ValidationError) as excinfo:
-        Preset.model_validate(_preset(orchestrator="teacher"))
+        Preset.model_validate(
+            {
+                "name": "legacy",
+                "orchestrator": "teacher",
+                "characters": [{"id": "assistant", "display_name": "老師"}],
+            }
+        )
 
     assert "is not one of the characters" in str(excinfo.value)
 
@@ -189,7 +232,7 @@ def test_preset_rejects_an_orchestrator_that_is_not_a_character():
 def test_preset_rejects_an_unregistered_tool():
     document = _preset(
         characters=[
-            {"id": "assistant", "display_name": "助教", "tools": ["search_textbook"]}
+            {"id": "assistant", "display_name": "老師", "tools": ["search_textbook"]}
         ]
     )
 
@@ -202,17 +245,41 @@ def test_preset_rejects_an_unregistered_tool():
 def test_preset_accepts_a_registered_tool():
     document = _preset(
         characters=[
-            {"id": "assistant", "display_name": "助教", "tools": ["rag_search"]}
+            {"id": "assistant", "display_name": "老師", "tools": ["rag_search"]}
         ]
     )
 
     assert Preset.model_validate(document).characters[0].tools == ["rag_search"]
 
 
+def test_preset_accepts_multiple_forced_subagent_personas():
+    preset = _multi_persona_preset()
+
+    assert [character.id for character in preset.characters] == [
+        "teacher",
+        "student",
+        "ta",
+    ]
+    assert [character.prompt_name for character in preset.characters[1:]] == [
+        "agents/student",
+        "agents/ta",
+    ]
+    assert preset.characters[2].max_steps == 5
+
+
+@pytest.mark.parametrize("bad_id", ["student", "teacher"])
+def test_preset_rejects_duplicate_or_reserved_persona_ids(bad_id):
+    document = _multi_persona_preset().model_dump()
+    document["tools"]["subagents"]["personas"][1]["id"] = bad_id
+
+    with pytest.raises(ValidationError):
+        Preset.model_validate(document)
+
+
 def test_preset_rejects_summon_without_anybody_to_summon():
     document = _preset(
         characters=[
-            {"id": "assistant", "display_name": "助教", "tools": ["summon_subagent"]}
+            {"id": "assistant", "display_name": "老師", "tools": ["summon_subagent"]}
         ]
     )
 
@@ -274,7 +341,7 @@ def test_preset_requires_a_prompt_name_on_a_summoned_character():
 
 
 def test_forced_rag_preset_is_accepted_when_it_is_solo_toolless_and_promptless():
-    preset = Preset.model_validate(_preset(rag_mode="forced"))
+    preset = _forced_rag_preset()
 
     assert preset.rag_mode == "forced"
 
@@ -299,7 +366,7 @@ def test_forced_rag_rejects_tools():
     document = _preset(
         rag_mode="forced",
         characters=[
-            {"id": "assistant", "display_name": "助教", "tools": ["rag_search"]}
+            {"id": "assistant", "display_name": "老師", "tools": ["rag_search"]}
         ],
     )
 
@@ -313,7 +380,7 @@ def test_forced_rag_rejects_a_prompt_name():
     document = _preset(
         rag_mode="forced",
         characters=[
-            {"id": "assistant", "display_name": "助教", "prompt_name": "agents/x"}
+            {"id": "assistant", "display_name": "老師", "prompt_name": "agents/x"}
         ],
     )
 
@@ -334,12 +401,17 @@ def test_default_presets_are_exactly_the_three_documented_ones():
     ]
 
 
-def test_default_chat_presets_are_a_single_assistant():
+def test_default_preset_documents_do_not_gain_an_empty_personas_field():
+    for preset in DEFAULT_PRESETS.values():
+        assert "personas" not in preset.model_dump()["tools"]["subagents"]
+
+
+def test_default_chat_presets_are_a_single_teacher():
     for name in ("default-chat", "default-chat-plain"):
         preset = DEFAULT_PRESETS[name]
-        assert preset.orchestrator == "assistant"
-        assert [c.id for c in preset.characters] == ["assistant"]
-        assert preset.characters[0].display_name == "助教"
+        assert preset.orchestrator == "teacher"
+        assert [c.id for c in preset.characters] == ["teacher"]
+        assert preset.characters[0].display_name == "老師"
         # /chat's contract is that the server injects no persona of its own.
         assert preset.characters[0].prompt_name is None
         # Neither default forces retrieval: /chat either offers the tool or not.
@@ -399,7 +471,15 @@ def test_build_cast_of_a_solo_preset_has_no_summon_target():
     cast = build_cast(DEFAULT_PRESETS["default-chat-plain"])
 
     assert cast.summon_target_id is None
-    assert list(cast.characters) == ["assistant"]
+    assert list(cast.characters) == ["teacher"]
+
+
+def test_build_cast_exposes_every_forced_persona_as_a_summon_target():
+    cast = build_cast(_multi_persona_preset())
+
+    assert list(cast.characters) == ["teacher", "student", "ta"]
+    assert cast.summon_target_ids == ("student", "ta")
+    assert cast.summon_target_id is None
 
 
 # --- registry ---------------------------------------------------------------
@@ -423,6 +503,33 @@ async def test_registry_loads_dataset_presets_alongside_the_builtins():
     assert preset.name == "socratic"
     assert registry.names() == sorted([*DEFAULT_PRESETS, "socratic"])
     assert langfuse.dataset_calls == ["config/presets"]
+
+
+@pytest.mark.asyncio
+async def test_registry_skips_every_archived_item_before_validation_or_shadowing():
+    langfuse = _FakeLangfuse(
+        [
+            _item(
+                "archived-custom",
+                _preset(name="retired"),
+                status=DatasetStatus.ARCHIVED,
+            ),
+            _item("archived-bad", "{not json", status="ARCHIVED"),
+            _item(
+                "archived-default",
+                _preset(name="default-chat", description="retired override"),
+                status=DatasetStatus.ARCHIVED,
+            ),
+            _item("active", _preset(name="socratic")),
+        ]
+    )
+    registry = PresetRegistry(langfuse=langfuse, settings=_settings())
+
+    report = await registry.refresh()
+
+    assert registry.names() == sorted([*DEFAULT_PRESETS, "socratic"])
+    assert registry.snapshot()["default-chat"] is DEFAULT_PRESETS["default-chat"]
+    assert report.errors == {}
 
 
 @pytest.mark.asyncio
@@ -491,7 +598,7 @@ async def test_one_bad_item_does_not_cost_the_others_their_place():
     assert (await registry.get("socratic")).name == "socratic"
     assert sorted(report.errors) == ["bad-json", "bad-schema", "not-a-document"]
     assert "not valid JSON" in report.errors["bad-json"]
-    assert "is not one of the characters" in report.errors["bad-schema"]
+    assert "orchestrator" in report.errors["bad-schema"]
     assert registry.load_errors == report.errors
 
 
@@ -682,6 +789,21 @@ async def test_ensure_default_presets_never_overwrites_an_existing_item():
 
     assert "default-chat" not in created
     assert sorted(created) == ["default-agents", "default-chat-plain"]
+    assert all(item_id != "default-chat" for _d, item_id, _doc in langfuse.written)
+
+
+@pytest.mark.asyncio
+async def test_ensure_default_presets_does_not_reactivate_an_archived_default():
+    archived = _item(
+        "default-chat",
+        _preset(name="default-chat"),
+        status=DatasetStatus.ARCHIVED,
+    )
+    langfuse = _SeedableLangfuse([archived])
+
+    created = await ensure_default_presets(langfuse, _settings())
+
+    assert "default-chat" not in created
     assert all(item_id != "default-chat" for _d, item_id, _doc in langfuse.written)
 
 
@@ -942,7 +1064,7 @@ async def test_run_preset_hands_the_engine_the_casts_own_arguments(
     kwargs = recorded_run_agents.kwargs
     assert kwargs["orchestrator"].id == "teacher"
     assert list(kwargs["characters"]) == ["teacher", "student"]
-    assert kwargs["summon_target_id"] == "student"
+    assert kwargs["summon_target_ids"] == ("student",)
     assert kwargs["max_steps"] == 8
     assert kwargs["tool_choice"] == "auto"
     assert kwargs["model"] == "gpt-oss-120b"

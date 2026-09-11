@@ -14,7 +14,6 @@ import {
 
 import { api } from "./client";
 import {
-    FALLBACK_TOOLS,
     isTerminal,
     type DatasetsResponse,
     type EvalHistoryEntry,
@@ -30,7 +29,6 @@ import {
     type RagConfigResponse,
     type RagConfigUpdate,
     type RagConfigUpdateResponse,
-    type ToolInfo,
 } from "./types";
 
 export const keys = {
@@ -44,8 +42,8 @@ export const keys = {
     history: (dataset: string) => ["evals", "history", dataset] as const,
     models: ["meta", "models"] as const,
     datasets: ["meta", "datasets"] as const,
+    prompts: ["meta", "prompts"] as const,
     judgePrompts: ["meta", "judge-prompts"] as const,
-    tools: ["meta", "tools"] as const,
 };
 
 // ── health ────────────────────────────────────────────────────────────────
@@ -100,40 +98,11 @@ export function useJudgePrompts(): UseQueryResult<NamedResource[]> {
     });
 }
 
-/** The tool registry lives in-process on the backend and has no route yet. Try
- * for one anyway — the day `GET /admin/tools` lands this list goes live with no
- * frontend change — and otherwise serve the typed constant, which mirrors
- * `_REGISTRY` in `app/agents/tools.py`. The fallback covers every failure, not
- * just the 404: the preset editor needs the names to be authorable, and a
- * build-time copy of a code-defined registry is a better answer than a spinner
- * that never resolves. */
-export function useTools(): UseQueryResult<ToolInfo[]> {
+export function usePrompts(): UseQueryResult<NamedResource[]> {
     return useQuery({
-        queryKey: keys.tools,
-        queryFn: async ({ signal }) => {
-            try {
-                const raw = await api.get<unknown>("/admin/tools", signal);
-                const list = Array.isArray(raw) ? raw : [];
-                const parsed = list.flatMap((entry): ToolInfo[] => {
-                    if (typeof entry !== "object" || entry === null) return [];
-                    const record = entry as Record<string, unknown>;
-                    if (typeof record.name !== "string") return [];
-                    return [
-                        {
-                            name: record.name,
-                            description:
-                                typeof record.description === "string"
-                                    ? record.description
-                                    : "",
-                        },
-                    ];
-                });
-                return parsed.length > 0 ? parsed : FALLBACK_TOOLS;
-            } catch {
-                return FALLBACK_TOOLS;
-            }
-        },
-        staleTime: Infinity,
+        queryKey: keys.prompts,
+        queryFn: ({ signal }) =>
+            api.get<NamedResource[]>("/admin/prompts", signal),
     });
 }
 

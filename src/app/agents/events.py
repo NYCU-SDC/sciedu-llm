@@ -16,12 +16,9 @@ from typing import Any, Literal
 PartType = Literal["text", "reasoning", "tool_call", "tool_result"]
 ToolResultStatus = Literal["ok", "error"]
 
-# The conventional `agent` id for a single-character run, and the default
-# `orchestrator` of a preset. Nothing in the engine keys off it any more — a
-# preset names its own orchestrator — but it stays the id the built-in
-# single-character presets use, which is what the spec prescribes for a run with
-# no cast.
-ORCHESTRATOR_AGENT_ID = "assistant"
+# The conventional `agent` id for the fixed main teacher. Nothing in the engine
+# keys off this constant; presets derive the same id from their tool sections.
+ORCHESTRATOR_AGENT_ID = "teacher"
 
 # Part types whose content arrives incrementally via `delta` events. `part_start`
 # omits the streaming field for these; `part_end` carries the complete value.

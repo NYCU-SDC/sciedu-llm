@@ -33,6 +33,7 @@ import {
 import { langfuseSessionUrl } from "../../api/client";
 import { errorMessage } from "../../api/errors";
 import { usePresets } from "../../api/hooks";
+import { Checkbox } from "../../components/Checkbox";
 import { CopyButton } from "../../components/CopyButton";
 import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
 import { PageHeader } from "../../components/States";
@@ -564,17 +565,13 @@ function AssistantTurnView({
                     <span className="tag tag-outline">已停止</span>
                 )}
                 {internalPresent && (
-                    <label className="radio pg-toggle">
-                        <input
-                            type="checkbox"
-                            checked={showInternal}
-                            onChange={(event) =>
-                                setShowInternal(event.target.checked)
-                            }
-                        />
-                        <span className="dot" />
+                    <Checkbox
+                        className="pg-toggle"
+                        checked={showInternal}
+                        onChange={setShowInternal}
+                    >
                         <span>顯示內部處理</span>
-                    </label>
+                    </Checkbox>
                 )}
             </div>
         </div>
@@ -613,7 +610,7 @@ function SpeakerBlockView({
     activeKey: string | null;
     showInternal: boolean;
 }) {
-    // A single-character run sends no cast at all, so the agent id ("assistant")
+    // A single-teacher run sends no cast at all, so the agent id ("teacher")
     // is the only name there is.
     const character: CastCharacter = cast.get(block.agent) ?? {
         id: block.agent,

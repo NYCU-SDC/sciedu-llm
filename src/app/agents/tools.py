@@ -1,10 +1,9 @@
 """The server-side tool registry.
 
 Every tool here is executed by this module — nothing is handed back to the caller
-to run. That is why a preset selects tools *by name* (``tools: ["rag_search"]``)
-instead of shipping function schemas: the schema the model sees has to match what
-we can actually execute, so the server owns it (see ``app.presets``, which
-validates every name against this registry at load time).
+to run. A preset enables the corresponding server-owned tool section rather than
+shipping function schemas: the schema the model sees has to match what we can
+actually execute, so the server owns it (see ``app.presets``).
 
 Executors are async generators yielding ``Event | ToolOutcome``, ending with
 exactly one ``ToolOutcome``. That shape exists for ``summon_subagent``: a summoned
@@ -16,7 +15,8 @@ yields its single outcome.
 """
 
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -67,9 +67,9 @@ class ToolContext:
     tool_call_id: str
     depth: int
     rag_pipeline: Any = None
-    # Who `summon_subagent` reaches. `None` on a summoned character's own
+    # Who `summon_subagent` may reach. Empty on a summoned character's own
     # context, which is the structural half of "a subagent may not summon".
-    summon_target_id: str | None = None
+    summon_target_ids: tuple[str, ...] = ()
 
 
 ToolExecutor = Callable[[ToolContext, Any], AsyncIterator[Event | ToolOutcome]]
@@ -87,14 +87,37 @@ class ToolSpec:
     internal: bool = False
     requires_rag: bool = False
 
-    def definition(self) -> dict[str, Any]:
+    def definition(
+        self, *, summon_targets: tuple[Character, ...] = ()
+    ) -> dict[str, Any]:
         """The OpenAI tool definition handed to the model."""
+        parameters = deepcopy(self.parameters)
+        description = self.description
+        if self.name == SUMMON_SUBAGENT_TOOL and summon_targets:
+            display_names = [target.display_name for target in summon_targets]
+            selectors = [
+                target.display_name
+                if display_names.count(target.display_name) == 1
+                else target.id
+                for target in summon_targets
+            ]
+            labels = "、".join(
+                f"{target.display_name}（ID: {target.id}）" for target in summon_targets
+            )
+            parameters["properties"]["persona"]["enum"] = selectors
+            parameters["properties"]["persona"]["description"] = (
+                f"要召喚的角色名稱。這次可用的角色：{labels}。"
+                "請優先使用角色名稱；角色 ID 仍可相容使用。"
+            )
+            if len(summon_targets) > 1:
+                parameters["required"] = [*parameters["required"], "persona"]
+                description += f" 這次必須以 persona 指定角色：{labels}。"
         return {
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters,
+                "description": description,
+                "parameters": parameters,
             },
         }
 
@@ -194,6 +217,10 @@ class SummonSubagentArgs(BaseModel):
         max_length=4000,
         description="要交給子代理的完整任務描述。子代理看不到對話紀錄，所以請把需要的背景都寫進來。",
     )
+    persona: str | None = Field(
+        default=None,
+        description="要召喚的角色名稱；有多個可用角色時必填。角色 ID 也相容。",
+    )
 
 
 _SUMMON_SUBAGENT_PARAMETERS: dict[str, Any] = {
@@ -205,7 +232,11 @@ _SUMMON_SUBAGENT_PARAMETERS: dict[str, Any] = {
                 "要交給子代理的完整任務描述。子代理看不到對話紀錄，"
                 "所以請把需要的背景都寫進來。"
             ),
-        }
+        },
+        "persona": {
+            "type": "string",
+            "description": "要召喚的角色名稱；有多個可用角色時必填。角色 ID 也相容。",
+        },
     },
     "required": ["prompt"],
     "additionalProperties": False,
@@ -215,19 +246,31 @@ _SUMMON_SUBAGENT_PARAMETERS: dict[str, Any] = {
 def _compile_subagent_messages(
     ctx: ToolContext, target: Character, task: str
 ) -> list[Any]:
-    """Build the summoned character's messages from its Langfuse chat prompt.
+    """Build the summoned agent's isolated task context.
 
-    The summoned character deliberately does not see the conversation history: it
-    is given one task and answers it, which keeps its context small and makes the
-    summon ``prompt`` argument the single contract between the two characters.
+    The subagent deliberately does not see the conversation history: it is given
+    one task and answers it, which keeps its context small and makes the summon
+    ``prompt`` argument the single contract between the two agents. Character
+    forcing accepts either Langfuse prompt type: a chat prompt supplies the full
+    message list, while a text prompt becomes the persona's system message and the
+    task is appended as a user message. A normal subagent receives only the task.
     """
     if not target.prompt_name:
-        # Preset validation requires a prompt_name on every summonable
-        # character, so this only fires on a hand-built cast. The caller turns
-        # it into a recoverable tool error.
-        raise ValueError(f"character '{target.id}' has no prompt_name to compile")
+        return [{"role": "user", "content": task}]
     prompt = ctx.langfuse.get_prompt(target.prompt_name, type="chat")
-    return list(prompt.compile(task=task))
+    compiled = prompt.compile(task=task)
+    if isinstance(compiled, str):
+        return [
+            {"role": "system", "content": compiled},
+            {"role": "user", "content": task},
+        ]
+
+    messages = list(compiled)
+    if not messages or not all(isinstance(message, Mapping) for message in messages):
+        raise TypeError(
+            f"Prompt '{target.prompt_name}' compiled to neither text nor chat messages"
+        )
+    return [dict(message) for message in messages]
 
 
 async def _run_summon_subagent(
@@ -246,7 +289,40 @@ async def _run_summon_subagent(
         )
         return
 
-    target = ctx.characters.get(ctx.summon_target_id or "")
+    target_ids = ctx.summon_target_ids
+    requested_persona = args.persona
+    target_id: str | None = None
+    if requested_persona is None and len(target_ids) == 1:
+        target_id = target_ids[0]
+    elif requested_persona is not None:
+        display_matches = [
+            candidate_id
+            for candidate_id in target_ids
+            if ctx.characters[candidate_id].display_name == requested_persona
+        ]
+        if len(display_matches) == 1:
+            target_id = display_matches[0]
+        elif requested_persona in target_ids:
+            target_id = requested_persona
+    if target_id is None or target_id not in target_ids:
+        available = (
+            "、".join(
+                f"{ctx.characters[candidate_id].display_name}（ID: {candidate_id}）"
+                for candidate_id in target_ids
+            )
+            if target_ids
+            else "（無）"
+        )
+        yield ToolOutcome(
+            status="error",
+            code=errors.INVALID_ARGUMENTS,
+            content=(
+                f"請以 persona 指定要召喚的角色名稱。這次可用的角色：{available}。"
+            ),
+        )
+        return
+
+    target = ctx.characters.get(target_id)
     if target is None:
         yield ToolOutcome(
             status="error",
@@ -281,7 +357,7 @@ async def _run_summon_subagent(
         characters=ctx.characters,
         # Nobody left to summon: the tool is not in a summoned character's list
         # anyway, and this closes the loop structurally.
-        summon_target_id=None,
+        summon_target_ids=(),
         parent=ctx.caller.id,
         summoned_by=ctx.tool_call_id,
         observation_name="subagent",

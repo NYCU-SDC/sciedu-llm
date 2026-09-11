@@ -2,10 +2,12 @@
 agentic endpoint.
 
 A preset says *everything* about a run that the server is willing to decide:
-which model, which characters exist, what each of them may call, how many steps
-they get, and whether retrieval is forced. Clients no longer ship tool lists or
-step budgets, so adding a new behaviour is a config change (a Langfuse dataset
-item) rather than a deploy.
+which model, which tools the teacher may use, how many steps they get, and how
+those tools behave. The stored shape is tool-based rather than cast-based: the
+main agent is always the teacher, while enabling the subagent tool optionally
+adds one or more forced personas. Clients no longer ship tool lists or step
+budgets, so adding a new behaviour is a config change (a Langfuse dataset item)
+rather than a deploy.
 
 Two sources, one serving map:
 
@@ -13,8 +15,9 @@ Two sources, one serving map:
   ``default-chat`` / ``default-chat-plain``), always available, so a dead or
   empty Langfuse still serves both endpoints.
 * A Langfuse dataset (``settings.presets_dataset_name``) whose items each hold
-  one preset document. Dataset entries *shadow* code defaults of the same name,
-  which is how a default gets tuned in production without a release.
+  one preset document. Only ``ACTIVE`` items are loaded; archived entries are
+  ignored. Active dataset entries *shadow* code defaults of the same name, which
+  is how a default gets tuned in production without a release.
 
 The two are joined up at startup by ``ensure_default_presets``: any default with
 no dataset item of its own is written into the dataset once, so an operator can
@@ -34,6 +37,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -49,6 +53,7 @@ logger = logging.getLogger(__name__)
 # Preset and character ids end up in URLs, SSE payloads, and Langfuse metadata,
 # so they are kept to a boring, lowercase, slug-shaped alphabet.
 PRESET_ID_PATTERN = r"^[a-z0-9][a-z0-9_-]{0,63}$"
+MAX_SUBAGENT_PERSONAS = 8
 
 # Fallbacks used when `Settings` does not carry the preset knobs (older config,
 # or a fake in tests). The real defaults live in `app.dependencies.Settings`.
@@ -57,8 +62,8 @@ DEFAULT_PRESETS_CACHE_TTL_SECONDS = 300.0
 
 # Written on the dataset when this deployment has never had one.
 PRESETS_DATASET_DESCRIPTION = (
-    "Run configurations served by /agents. One item per preset; the item id is "
-    "the preset name and the item input is the preset document."
+    "/agents 使用的執行設定。每個預設值各有一個項目；項目 id 是預設值名稱，"
+    "項目的 input 則是預設值文件。"
 )
 
 # After a failed fetch, wait this long before trying again. Without it, a
@@ -66,8 +71,20 @@ PRESETS_DATASET_DESCRIPTION = (
 _FAILED_RETRY_SECONDS = 30.0
 
 
+def is_active_preset_item(item: Any) -> bool:
+    """Whether a Langfuse dataset item may participate in preset loading.
+
+    Current Langfuse responses always carry ``status``. Treating a missing
+    attribute as active keeps older SDK stand-ins and previously compatible
+    clients working, while every explicit non-active status is skipped.
+    """
+    status = getattr(item, "status", DatasetStatus.ACTIVE)
+    value = getattr(status, "value", status)
+    return value == DatasetStatus.ACTIVE.value
+
+
 class PresetCharacter(BaseModel):
-    """One speaker in a preset.
+    """One runtime speaker derived from a preset's tool configuration.
 
     ``prompt_name`` means two different things by position, because the two roles
     are prompted differently:
@@ -90,6 +107,87 @@ class PresetCharacter(BaseModel):
     max_steps: int = Field(default=3, ge=1, le=MAX_STEPS_CAP)
 
 
+class RagToolConfig(BaseModel):
+    """How the teacher may use retrieval.
+
+    ``enable_tool`` exposes ``rag_search`` to the model. ``force`` instead runs
+    retrieval before the model answers; it implies enablement in the stored
+    document, even though no callable tool is exposed at runtime.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enable_tool: bool = False
+    force: bool = False
+
+    @model_validator(mode="after")
+    def _force_requires_enablement(self) -> "RagToolConfig":
+        if self.force and not self.enable_tool:
+            raise ValueError("force=true requires enable_tool=true")
+        return self
+
+
+class SubagentPersona(BaseModel):
+    """One selectable identity available through ``summon_subagent``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=PRESET_ID_PATTERN)
+    display_name: str = Field(min_length=1, max_length=80)
+    prompt_name: str = Field(min_length=1)
+    max_steps: int = Field(default=3, ge=1, le=MAX_STEPS_CAP)
+
+
+class SubagentToolConfig(BaseModel):
+    """How the teacher may delegate one task to a subagent.
+
+    With character forcing off, the subagent is a normal assistant that receives
+    the teacher's task directly. Turning it on makes ``personas`` selectable by
+    id and compiles the chosen persona's Langfuse chat prompt. ``prompt_name`` and
+    ``max_steps`` retain the original single-student document shape so existing
+    presets continue to round-trip unchanged.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enable_tool: bool = False
+    character_forcing: bool = False
+    prompt_name: str | None = None
+    max_steps: int = Field(default=3, ge=1, le=MAX_STEPS_CAP)
+    personas: list[SubagentPersona] = Field(
+        default_factory=list,
+        max_length=MAX_SUBAGENT_PERSONAS,
+        # Keep legacy/default documents byte-shaped as before until they
+        # actually opt into multiple personas.
+        exclude_if=lambda personas: not personas,
+    )
+
+    @model_validator(mode="after")
+    def _forcing_requires_an_enabled_tool_and_prompt(self) -> "SubagentToolConfig":
+        if self.character_forcing and not self.enable_tool:
+            raise ValueError("character_forcing=true requires enable_tool=true")
+        if self.character_forcing and not self.personas and not self.prompt_name:
+            raise ValueError(
+                "character_forcing=true requires personas or the legacy prompt_name"
+            )
+        ids = [persona.id for persona in self.personas]
+        duplicates = sorted({id_ for id_ in ids if ids.count(id_) > 1})
+        if duplicates:
+            raise ValueError(f"duplicate persona ids: {', '.join(duplicates)}")
+        if "teacher" in ids:
+            raise ValueError("persona id 'teacher' is reserved for the main agent")
+        return self
+
+
+class PresetTools(BaseModel):
+    """The configurable tool sections stored in one preset document."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    rag: RagToolConfig = Field(default_factory=RagToolConfig)
+    subagents: SubagentToolConfig = Field(default_factory=SubagentToolConfig)
+
+
 class Preset(BaseModel):
     """A complete, validated run configuration."""
 
@@ -102,79 +200,176 @@ class Preset(BaseModel):
     model: str | None = None
     max_steps: int = Field(default=8, ge=1, le=MAX_STEPS_CAP)
     tool_choice: Literal["auto", "none", "required"] = "auto"
-    # "forced" prepends the RAG-compiled system prompt and swaps the latest user
-    # turn for the context-augmented one, before the model gets a say — what
-    # /chat's `enable_rag` used to do. "off" leaves retrieval to the
-    # `rag_search` tool, if the preset grants it, which is how every preset this
-    # server ships retrieves; "forced" stays for a deployment that wants
-    # retrieval on every single turn.
-    rag_mode: Literal["off", "forced"] = "off"
-    orchestrator: str = "assistant"
-    characters: list[PresetCharacter] = Field(min_length=1, max_length=2)
+    teacher_prompt_name: str | None = None
+    tools: PresetTools
 
-    @model_validator(mode="after")
-    def _validate_shape(self) -> "Preset":
-        ids = [character.id for character in self.characters]
-        duplicates = sorted({id_ for id_ in ids if ids.count(id_) > 1})
+    @model_validator(mode="before")
+    @classmethod
+    def _upgrade_cast_documents(cls, value: Any) -> Any:
+        """Accept the pre-tool-section document shape during migration.
+
+        Existing Langfuse items must keep serving across the rollout. Reads turn
+        their old cast/tool lists into the new canonical model; ``model_dump`` and
+        every admin write emit only the new shape.
+        """
+        if not isinstance(value, dict) or "characters" not in value:
+            return value
+
+        document = dict(value)
+        raw_characters = document.pop("characters", [])
+        characters = [
+            item.model_dump() if isinstance(item, BaseModel) else item
+            for item in raw_characters
+            if isinstance(item, (dict, BaseModel))
+        ]
+        orchestrator_id = document.pop("orchestrator", "assistant")
+        rag_mode = document.pop("rag_mode", "off")
+        ids = [item.get("id") for item in characters]
+        duplicates = sorted(
+            {str(id_) for id_ in ids if id_ is not None and ids.count(id_) > 1}
+        )
         if duplicates:
             raise ValueError(f"duplicate character ids: {', '.join(duplicates)}")
-        if self.orchestrator not in ids:
+        main = next(
+            (item for item in characters if item.get("id") == orchestrator_id), None
+        )
+        if main is None:
             raise ValueError(
-                f"orchestrator '{self.orchestrator}' is not one of the "
-                f"characters: {', '.join(ids)}"
+                f"orchestrator '{orchestrator_id}' is not one of the characters: "
+                f"{', '.join(str(id_) for id_ in ids)}"
             )
-
-        known_tools = set(registered_tool_names())
-        for character in self.characters:
-            unknown = [name for name in character.tools if name not in known_tools]
-            if unknown:
-                raise ValueError(
-                    f"character '{character.id}' requests unknown tool(s): "
-                    f"{', '.join(unknown)}. Available tools: "
-                    f"{', '.join(sorted(known_tools))}."
-                )
-
-        orchestrator = next(c for c in self.characters if c.id == self.orchestrator)
-        # Only the orchestrator can summon, and only if there is somebody to
-        # summon: a preset granting the tool with nobody to call would fail at
-        # run time as a tool error the model cannot fix.
-        for character in self.characters:
-            if character.id == self.orchestrator:
-                continue
-            if SUMMON_SUBAGENT_TOOL in character.tools:
-                raise ValueError(
-                    f"'{SUMMON_SUBAGENT_TOOL}' is only allowed on the "
-                    f"orchestrator, not on character '{character.id}'"
-                )
-            if not character.prompt_name:
-                raise ValueError(
-                    f"character '{character.id}' is summoned and therefore needs "
-                    "a prompt_name"
-                )
-        if SUMMON_SUBAGENT_TOOL in orchestrator.tools and len(self.characters) < 2:
+        others = [item for item in characters if item is not main]
+        subagent = others[0] if others else {}
+        main_tools = list(main.get("tools") or [])
+        all_tools = [tool for item in characters for tool in (item.get("tools") or [])]
+        unknown = sorted(set(all_tools) - set(registered_tool_names()))
+        if unknown:
             raise ValueError(
-                f"'{SUMMON_SUBAGENT_TOOL}' needs a second character to summon"
+                f"legacy preset requests unknown tool(s): {', '.join(unknown)}"
             )
-
-        if self.rag_mode == "forced":
-            # Forced RAG *is* the prompt: the pipeline supplies the system
-            # message and rewrites the user turn, so a second system prompt or a
-            # retrieval tool would only fight it.
-            if len(self.characters) != 1:
+        for item in others:
+            if SUMMON_SUBAGENT_TOOL in (item.get("tools") or []):
                 raise ValueError(
-                    "rag_mode='forced' supports exactly one character, got "
-                    f"{len(self.characters)}"
+                    f"'{SUMMON_SUBAGENT_TOOL}' is only allowed on the orchestrator"
                 )
-            only = self.characters[0]
-            if only.tools:
+        if SUMMON_SUBAGENT_TOOL in main_tools and not subagent:
+            raise ValueError(f"'{SUMMON_SUBAGENT_TOOL}' needs a second character")
+        missing_prompts = [
+            str(item.get("id")) for item in others if not item.get("prompt_name")
+        ]
+        if missing_prompts:
+            raise ValueError(
+                "summoned character needs a prompt_name: " + ", ".join(missing_prompts)
+            )
+        if rag_mode == "forced":
+            if len(characters) != 1:
+                raise ValueError("rag_mode='forced' supports exactly one character")
+            if all_tools:
                 raise ValueError("rag_mode='forced' does not allow any tools")
-            if only.prompt_name is not None:
-                raise ValueError(
-                    "rag_mode='forced' supplies the system prompt itself, so "
-                    "the character must not set prompt_name"
-                )
+            if main.get("prompt_name") is not None:
+                raise ValueError("forced RAG character must not set prompt_name")
 
+        subagents_enabled = SUMMON_SUBAGENT_TOOL in main_tools and bool(subagent)
+        document["teacher_prompt_name"] = main.get("prompt_name")
+        subagent_document: dict[str, Any] = {
+            "enable_tool": subagents_enabled,
+            "character_forcing": subagents_enabled
+            and bool(subagent.get("prompt_name")),
+            "prompt_name": subagent.get("prompt_name"),
+            "max_steps": subagent.get("max_steps", 3),
+        }
+        if len(others) > 1:
+            subagent_document["personas"] = [
+                {
+                    "id": item.get("id"),
+                    "display_name": item.get("display_name", str(item.get("id"))),
+                    "prompt_name": item.get("prompt_name"),
+                    "max_steps": item.get("max_steps", 3),
+                }
+                for item in others
+            ]
+        document["tools"] = {
+            "rag": {
+                "enable_tool": rag_mode == "forced" or RAG_SEARCH_TOOL in all_tools,
+                "force": rag_mode == "forced",
+            },
+            "subagents": subagent_document,
+        }
+        return document
+
+    @model_validator(mode="after")
+    def _validate_tool_combination(self) -> "Preset":
+        # Forced RAG supplies the teacher's system instructions itself. A second
+        # teacher prompt would compete with it, while a student prompt is scoped
+        # to a later delegated run and remains valid.
+        if self.tools.rag.force and self.teacher_prompt_name is not None:
+            raise ValueError(
+                "forced RAG supplies the teacher system prompt, so "
+                "teacher_prompt_name must be null"
+            )
         return self
+
+    @property
+    def rag_mode(self) -> Literal["off", "forced"]:
+        """Compatibility view consumed by the existing execution pipeline."""
+        return "forced" if self.tools.rag.force else "off"
+
+    @property
+    def orchestrator(self) -> str:
+        """The main agent is fixed as the teacher for every preset."""
+        return "teacher"
+
+    @property
+    def characters(self) -> list[PresetCharacter]:
+        """Derive the runtime cast from the tool-based stored document."""
+        teacher_tools: list[str] = []
+        if self.tools.rag.enable_tool and not self.tools.rag.force:
+            teacher_tools.append(RAG_SEARCH_TOOL)
+        if self.tools.subagents.enable_tool:
+            teacher_tools.append(SUMMON_SUBAGENT_TOOL)
+
+        characters = [
+            PresetCharacter(
+                id="teacher",
+                display_name="老師",
+                role="teacher",
+                prompt_name=self.teacher_prompt_name,
+                tools=teacher_tools,
+            )
+        ]
+        if not self.tools.subagents.enable_tool:
+            return characters
+
+        forcing = self.tools.subagents.character_forcing
+        subagent_tools = (
+            [RAG_SEARCH_TOOL]
+            if self.tools.rag.enable_tool and not self.tools.rag.force
+            else []
+        )
+        if forcing and self.tools.subagents.personas:
+            characters.extend(
+                PresetCharacter(
+                    id=persona.id,
+                    display_name=persona.display_name,
+                    role=persona.id,
+                    prompt_name=persona.prompt_name,
+                    tools=subagent_tools,
+                    max_steps=persona.max_steps,
+                )
+                for persona in self.tools.subagents.personas
+            )
+        else:
+            characters.append(
+                PresetCharacter(
+                    id="student" if forcing else "subagent",
+                    display_name="學生" if forcing else "子代理人",
+                    role="student" if forcing else "assistant",
+                    prompt_name=self.tools.subagents.prompt_name if forcing else None,
+                    tools=subagent_tools,
+                    max_steps=self.tools.subagents.max_steps,
+                )
+            )
+        return characters
 
 
 #: The presets this server ships with. Each one is seeded into the preset
@@ -184,61 +379,42 @@ DEFAULT_PRESETS: dict[str, Preset] = {
     "default-agents": Preset(
         name="default-agents",
         description=(
-            "A teacher who can search the textbook and summon a student to "
-            "answer first, then correct and extend the student's answer. The "
-            "default /agents behaviour."
+            "老師可搜尋課本，也可召喚學生先作答，再加以訂正與補充。"
+            "這是 /agents 的預設行為。"
         ),
         max_steps=8,
-        orchestrator="teacher",
-        characters=[
-            PresetCharacter(
-                id="teacher",
-                display_name="老師",
-                role="teacher",
-                prompt_name="agents/teacher-system",
-                # Every registered tool, named one by one rather than pulled
-                # from the registry: what the default cast may call is a product
-                # decision, not "whatever happens to be installed".
-                tools=[RAG_SEARCH_TOOL, SUMMON_SUBAGENT_TOOL],
-            ),
-            PresetCharacter(
-                id="student",
-                display_name="學生",
-                role="student",
+        teacher_prompt_name="agents/teacher-system",
+        tools=PresetTools(
+            rag=RagToolConfig(enable_tool=True),
+            subagents=SubagentToolConfig(
+                enable_tool=True,
+                character_forcing=True,
                 prompt_name="agents/student",
-                tools=[RAG_SEARCH_TOOL],
                 max_steps=3,
             ),
-        ],
+        ),
     ),
     "default-chat": Preset(
         name="default-chat",
         description=(
-            "Assistant that decides for itself when to search the textbook, via "
-            "the rag_search tool. What /chat runs for `enable_rag: true`."
+            "老師透過 rag_search 工具自行判斷何時搜尋課本。"
+            "/chat 在 enable_rag 為 true 時使用此預設值。"
         ),
         # A model-chosen search costs a step to call and a step to answer from,
         # so a single-step budget would make the tool unusable.
         max_steps=8,
-        orchestrator="assistant",
-        characters=[
-            # No `prompt_name`: /chat's contract is that the server injects no
-            # persona of its own, and the caller's own system message is the
-            # only one the model sees.
-            PresetCharacter(
-                id="assistant", display_name="助教", tools=[RAG_SEARCH_TOOL]
-            )
-        ],
+        # No teacher prompt: /chat's contract is that the server injects no
+        # persona of its own, and the caller's own system message is the only one
+        # the model sees.
+        tools=PresetTools(rag=RagToolConfig(enable_tool=True)),
     ),
     "default-chat-plain": Preset(
         name="default-chat-plain",
         description=(
-            "Plain single-turn assistant. No tools, no retrieval. What /chat "
-            "runs for `enable_rag: false`."
+            "單輪老師，不使用工具或檢索。/chat 在 enable_rag 為 false 時使用此預設值。"
         ),
         max_steps=1,
-        orchestrator="assistant",
-        characters=[PresetCharacter(id="assistant", display_name="助教")],
+        tools=PresetTools(),
     ),
 }
 
@@ -347,7 +523,11 @@ class PresetRegistry:
             # too, which is deliberate: a Langfuse stand-in without the method
             # degrades to the code defaults rather than breaking every request.
             dataset = await asyncio.to_thread(self._langfuse.get_dataset, name)
-            items = list(getattr(dataset, "items", None) or [])
+            items = [
+                item
+                for item in (getattr(dataset, "items", None) or [])
+                if is_active_preset_item(item)
+            ]
         except Exception as e:
             logger.exception(
                 "could not load the preset dataset '%s'; continuing to serve the "

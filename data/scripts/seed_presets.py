@@ -20,7 +20,8 @@ Two kinds of file live under `data/presets/`:
   writes to as well, so the two paths upsert the same item).
 
 * `data/presets/prompts/**/*.json` — **prompt descriptors**, the Langfuse
-  prompts the presets name in `prompt_name`. The descriptor schema is:
+  prompts presets select for the teacher or a forced character. The descriptor
+  schema is:
 
       {
         "name":   "agents/teacher-system",   # canonical Langfuse prompt name
@@ -31,15 +32,16 @@ Two kinds of file live under `data/presets/`:
       }
 
   Variables use Langfuse's `{{name}}` syntax. `agents/student` is a *chat*
-  prompt taking `{{task}}` because that is how a summoned character is
-  prompted; orchestrator prompts are *text* prompts compiled with no variables.
+  prompt taking `{{task}}` because that is how a forced student character is
+  prompted; teacher prompts are *text* prompts compiled with no variables.
 
-Re-running is safe and conservative: presets and prompts that already exist are
-skipped with a warning, because a preset may well have been tuned in production
-through `PUT /admin/presets/{name}` since it was seeded. `--overwrite` upserts
-the dataset items and pushes a new version of each prompt. `--dry-run`
-validates every file and reports what it would do without contacting Langfuse
-(useful in CI, and it needs no credentials).
+Re-running is safe and conservative: active presets and prompts that already
+exist are skipped with a warning, because a preset may well have been tuned in
+production through `PUT /admin/presets/{name}` since it was seeded. Archived
+preset items are treated as absent and a matching seed is written as `ACTIVE`.
+`--overwrite` upserts active dataset items and pushes a new version of each
+prompt. `--dry-run` validates every file and reports what it would do without
+contacting Langfuse (useful in CI, and it needs no credentials).
 
 Usage:
     uv run python data/scripts/seed_presets.py [--overwrite] [--dry-run]
@@ -58,19 +60,22 @@ from _common import (  # noqa: E402
     get_langfuse_client,
     retry_on_transport_error,
 )
+from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
 from pydantic import ValidationError
 
-from app.presets import DEFAULT_PRESETS_DATASET_NAME, Preset
+from app.presets import (
+    DEFAULT_PRESETS_DATASET_NAME,
+    PRESETS_DATASET_DESCRIPTION,
+    Preset,
+    is_active_preset_item,
+)
 
 PRESETS_ROOT = DATA_ROOT / "presets"
 PROMPTS_ROOT = PRESETS_ROOT / "prompts"
 
 DATASET_NAME = DEFAULT_PRESETS_DATASET_NAME
-DATASET_DESCRIPTION = (
-    "Run configurations served by /agents. One item per preset; the item id is "
-    "the preset name and the item input is the preset document."
-)
+DATASET_DESCRIPTION = PRESETS_DATASET_DESCRIPTION
 
 PRODUCTION_LABEL = "production"
 
@@ -216,7 +221,11 @@ def prompt_exists(client, name: str, prompt_type: str) -> bool:
 def existing_preset_ids(client) -> set[str]:
     if not dataset_exists(client, DATASET_NAME):
         return set()
-    return {str(item.id) for item in client.get_dataset(DATASET_NAME).items}
+    return {
+        str(item.id)
+        for item in client.get_dataset(DATASET_NAME).items
+        if is_active_preset_item(item)
+    }
 
 
 def seed_prompts(client, prompts, overwrite: bool, logger: logging.Logger) -> None:
@@ -270,6 +279,7 @@ def seed_presets(client, presets, overwrite: bool, logger: logging.Logger) -> No
                 dataset_name=DATASET_NAME,
                 input=document,
                 metadata={"source": path.name},
+                status=DatasetStatus.ACTIVE,
             ),
             logger=logger,
         )

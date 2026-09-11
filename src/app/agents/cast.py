@@ -14,7 +14,7 @@ from app.presets import Preset
 
 @dataclass(frozen=True)
 class Cast:
-    """Who can speak in one run, and who the summon tool reaches.
+    """Who can speak in one run, and which personas the summon tool can reach.
 
     ``characters`` includes the orchestrator and is ordered orchestrator-first,
     which is the order the ``cast`` event presents to the frontend.
@@ -22,10 +22,14 @@ class Cast:
 
     orchestrator: Character
     characters: dict[str, Character]
-    # The single non-orchestrator character, if the preset has one. `None` for a
-    # solo preset, in which case `summon_subagent` is not in the cast's tools
-    # either (preset validation guarantees that pairing).
-    summon_target_id: str | None
+    # Every non-orchestrator character. Empty for a solo preset, in which case
+    # `summon_subagent` is not in the cast's tools either.
+    summon_target_ids: tuple[str, ...]
+
+    @property
+    def summon_target_id(self) -> str | None:
+        """Compatibility view for callers expecting the original single target."""
+        return self.summon_target_ids[0] if len(self.summon_target_ids) == 1 else None
 
 
 def build_cast(preset: Preset) -> Cast:
@@ -52,6 +56,5 @@ def build_cast(preset: Preset) -> Cast:
     return Cast(
         orchestrator=orchestrator,
         characters=characters,
-        # At most one, since a preset carries at most two characters.
-        summon_target_id=others[0] if others else None,
+        summon_target_ids=tuple(others),
     )

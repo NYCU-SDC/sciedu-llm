@@ -94,16 +94,31 @@ export const PRESET_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const MAX_STEPS_CAP = 16;
 
 export type ToolChoice = "auto" | "none" | "required";
-export type RagMode = "off" | "forced";
 
-/** PresetCharacter. */
-export interface PresetCharacter {
+export interface RagToolConfig {
+    enable_tool: boolean;
+    force: boolean;
+}
+
+export interface SubagentPersona {
     id: string;
     display_name: string;
-    role: string;
-    prompt_name: string | null;
-    tools: string[];
+    prompt_name: string;
     max_steps: number;
+}
+
+export interface SubagentToolConfig {
+    enable_tool: boolean;
+    character_forcing: boolean;
+    /** Legacy single-student fields, retained for existing preset documents. */
+    prompt_name: string | null;
+    max_steps: number;
+    personas?: SubagentPersona[];
+}
+
+export interface PresetTools {
+    rag: RagToolConfig;
+    subagents: SubagentToolConfig;
 }
 
 /** Preset — the exact document the JSON editor edits and PUT accepts. */
@@ -113,9 +128,8 @@ export interface Preset {
     model: string | null;
     max_steps: number;
     tool_choice: ToolChoice;
-    rag_mode: RagMode;
-    orchestrator: string;
-    characters: PresetCharacter[];
+    teacher_prompt_name: string | null;
+    tools: PresetTools;
 }
 
 /** PresetSummary. A preset is dataset-defined — and so deletable — when
@@ -235,22 +249,3 @@ export interface DatasetsResponse {
     corpus: NamedResource[];
     questions: NamedResource[];
 }
-
-// ── tools ─────────────────────────────────────────────────────────────────
-
-export interface ToolInfo {
-    name: string;
-    description: string;
-}
-
-/** The tool registry has no HTTP endpoint yet (`app/agents/tools.py` owns it
- * in-process). `useTools()` tries `GET /admin/tools` first so the list becomes
- * live the day that endpoint lands, and falls back to this constant — which is
- * `_REGISTRY` in `src/app/agents/tools.py`, verbatim — on a 404. */
-export const FALLBACK_TOOLS: ToolInfo[] = [
-    { name: "rag_search", description: "搜尋課程教材。" },
-    {
-        name: "summon_subagent",
-        description: "先呼叫另一位角色回答。",
-    },
-];

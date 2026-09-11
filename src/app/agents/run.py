@@ -193,6 +193,6 @@ async def run_preset(
         max_steps=preset.max_steps,
         tool_choice=preset.tool_choice,
         rag_pipeline=rag_pipeline,
-        summon_target_id=prepared.cast.summon_target_id,
+        summon_target_ids=prepared.cast.summon_target_ids,
     ):
         yield event

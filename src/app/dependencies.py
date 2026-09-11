@@ -33,9 +33,10 @@ class Settings(BaseSettings):
     chat_title_prompt_name: str = "app/chat-title-generator"
     chat_title_max_attempts: int = 3
 
-    # Agentic (/agents) config. Who may speak, what they may call and how many
-    # steps they get is no longer configured here — it lives in a *preset* (see
-    # `app.presets`), so a new behaviour is a config change rather than a deploy.
+    # Agentic (/agents) config. The teacher's prompt, enabled tool sections,
+    # subagent behavior and step budgets are no longer configured here — they
+    # live in a *preset* (see `app.presets`), so a new behaviour is a config
+    # change rather than a deploy.
     #
     # How long a single tool may go without producing anything before it is
     # abandoned and reported to the model as a timeout.

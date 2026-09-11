@@ -19,6 +19,7 @@ os.environ.setdefault("OPENAI_API_KEY", "mock_key")
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
 
 from app.dependencies import get_langfuse_client, get_settings
@@ -28,15 +29,24 @@ from app.routers.admin import presets as presets_router
 DATASET = "config/presets"
 
 
-def _item(id_: str, document):
-    return SimpleNamespace(id=id_, input=document)
+def _item(id_: str, document, *, status=DatasetStatus.ACTIVE):
+    return SimpleNamespace(id=id_, input=document, status=status)
 
 
 def _document(**overrides) -> dict:
     document = {
         "name": "socratic",
         "description": "asks questions back",
-        "characters": [{"id": "assistant", "display_name": "助教"}],
+        "teacher_prompt_name": None,
+        "tools": {
+            "rag": {"enable_tool": False, "force": False},
+            "subagents": {
+                "enable_tool": False,
+                "character_forcing": False,
+                "prompt_name": None,
+                "max_steps": 3,
+            },
+        },
     }
     document.update(overrides)
     return document
@@ -67,13 +77,14 @@ class _FakeLangfuse:
 
     def create_dataset_item(self, *, dataset_name, input, id=None, **_kwargs):
         self.written.append((dataset_name, id, input))
+        status = _kwargs.get("status") or DatasetStatus.ACTIVE
         items = self.datasets.setdefault(dataset_name, [])
         for index, existing in enumerate(items):
             if existing.id == id:
                 # Langfuse upserts on a reused item id; mirror that here.
-                items[index] = _item(id, input)
+                items[index] = _item(id, input, status=status)
                 return
-        items.append(_item(id, input))
+        items.append(_item(id, input, status=status))
 
     def _delete_item(self, *, id):
         self.deleted.append(id)
@@ -139,6 +150,20 @@ def test_list_marks_a_dataset_preset_as_neither_builtin_nor_shadowing(build_clie
     assert registry.names() == sorted([*DEFAULT_PRESETS, "socratic"])
 
 
+def test_list_and_get_skip_archived_dataset_presets(build_client):
+    langfuse = _FakeLangfuse(
+        [_item("retired", _document(name="retired"), status="ARCHIVED")]
+    )
+    client, _langfuse, registry = build_client(langfuse)
+    client.post("/presets/refresh")
+
+    names = [entry["name"] for entry in client.get("/presets").json()]
+
+    assert names == sorted(DEFAULT_PRESETS)
+    assert "retired" not in registry.names()
+    assert client.get("/presets/retired").status_code == 404
+
+
 def test_list_marks_a_shadowed_builtin(build_client):
     langfuse = _FakeLangfuse(
         [_item("default-chat", _document(name="default-chat", description="tuned"))]
@@ -200,6 +225,41 @@ def test_put_writes_the_item_and_serves_it_immediately(build_client):
     assert registry.names() == sorted([*DEFAULT_PRESETS, "socratic"])
 
 
+def test_put_round_trips_multiple_subagent_personas(build_client):
+    client, langfuse, registry = build_client()
+    document = _document()
+    document["tools"]["subagents"] = {
+        "enable_tool": True,
+        "character_forcing": True,
+        "prompt_name": None,
+        "max_steps": 3,
+        "personas": [
+            {
+                "id": "student",
+                "display_name": "學生",
+                "prompt_name": "agents/student",
+                "max_steps": 3,
+            },
+            {
+                "id": "ta",
+                "display_name": "TA",
+                "prompt_name": "agents/ta",
+                "max_steps": 5,
+            },
+        ],
+    }
+
+    response = client.put("/presets/socratic", json=document)
+
+    assert response.status_code == 200
+    saved = response.json()["definition"]["tools"]["subagents"]["personas"]
+    assert [persona["id"] for persona in saved] == ["student", "ta"]
+    assert langfuse.written[-1][2]["tools"]["subagents"]["personas"] == saved
+    assert [
+        character.id for character in registry.snapshot()["socratic"].characters
+    ] == ["teacher", "student", "ta"]
+
+
 def test_put_reuses_the_item_id_so_an_edit_upserts(build_client):
     client, langfuse, registry = build_client()
 
@@ -212,6 +272,21 @@ def test_put_reuses_the_item_id_so_an_edit_upserts(build_client):
     ]
     assert len(langfuse.datasets[DATASET]) == 1
     assert registry.snapshot()["socratic"].description == "reworded"
+
+
+def test_put_reactivates_an_archived_item_with_the_same_id(build_client):
+    langfuse = _FakeLangfuse(
+        [_item("socratic", _document(), status=DatasetStatus.ARCHIVED)]
+    )
+    client, _langfuse, registry = build_client(langfuse)
+
+    response = client.put(
+        "/presets/socratic", json=_document(description="active again")
+    )
+
+    assert response.status_code == 200
+    assert langfuse.datasets[DATASET][0].status is DatasetStatus.ACTIVE
+    assert registry.snapshot()["socratic"].description == "active again"
 
 
 def test_put_creates_the_dataset_when_it_does_not_exist_yet(build_client):
@@ -251,7 +326,7 @@ def test_put_surfaces_the_semantic_validation_error(build_client):
         "/presets/socratic",
         json=_document(
             characters=[
-                {"id": "assistant", "display_name": "助教", "tools": ["nonesuch"]}
+                {"id": "assistant", "display_name": "老師", "tools": ["nonesuch"]}
             ]
         ),
     )
@@ -334,6 +409,18 @@ def test_delete_of_an_unknown_preset_is_404(build_client):
     assert langfuse.deleted == []
 
 
+def test_delete_treats_an_archived_item_as_unknown(build_client):
+    langfuse = _FakeLangfuse(
+        [_item("socratic", _document(), status=DatasetStatus.ARCHIVED)]
+    )
+    client, _langfuse, _registry = build_client(langfuse)
+
+    response = client.delete("/presets/socratic")
+
+    assert response.status_code == 404
+    assert langfuse.deleted == []
+
+
 def test_delete_finds_an_item_whose_id_is_not_the_preset_name(build_client):
     # Hand-created in the Langfuse UI: arbitrary item id, correct document name.
     langfuse = _FakeLangfuse([_item("cm-generated-id", _document())])
@@ -358,7 +445,7 @@ def test_refresh_reports_what_is_served_and_what_failed(build_client):
     body = client.post("/presets/refresh").json()
 
     assert body["loaded"] == sorted([*DEFAULT_PRESETS, "socratic"])
-    assert "is not one of the characters" in body["errors"]["broken"]
+    assert "orchestrator" in body["errors"]["broken"]
     assert body["fetched_at"] is not None
 
 

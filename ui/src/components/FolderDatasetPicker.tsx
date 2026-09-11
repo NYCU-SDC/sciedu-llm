@@ -1,6 +1,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
+import { Checkbox } from "./Checkbox";
+
 /** One selectable dataset.
  *
  * `name` is the full Langfuse name ("corpus/ver3/biology") and is always what
@@ -230,21 +232,15 @@ function TriCheck({
     children: ReactNode;
 }) {
     return (
-        <label
-            className={bare ? "radio picker-bare" : "radio check-row"}
+        <Checkbox
+            className={bare ? "picker-bare" : "check-row"}
             title={title}
+            checked={checked}
+            disabled={disabled}
+            indeterminate={indeterminate}
+            onChange={onChange}
         >
-            <input
-                type="checkbox"
-                checked={checked}
-                disabled={disabled}
-                ref={(node) => {
-                    if (node) node.indeterminate = indeterminate ?? false;
-                }}
-                onChange={(event) => onChange(event.target.checked)}
-            />
-            <span className="dot" />
             <span style={{ flex: 1, minWidth: 0 }}>{children}</span>
-        </label>
+        </Checkbox>
     );
 }

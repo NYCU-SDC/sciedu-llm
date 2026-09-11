@@ -12,10 +12,9 @@ import {
 import type { Preset, PresetDetail, PresetSummary } from "../../api/types";
 import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
 import { Loading, PageHeader } from "../../components/States";
-import { PresetSourceTag } from "../../components/StatusTag";
 import { formatUnixSeconds, pluralise } from "../../lib/format";
 import { ImportPresetsDialog } from "./ImportPresetsDialog";
-import { describeRagMode } from "./presetShape";
+import { enabledToolCount } from "./presetShape";
 
 export function PresetsScreen() {
     const navigate = useNavigate();
@@ -52,7 +51,7 @@ export function PresetsScreen() {
             <PageHeader
                 kicker="Agent 行為定義"
                 title="行為預設"
-                lede="預設值是助理的一組命名行為：使用哪個模型、各角色採用哪個提示詞、可使用哪些工具，以及是否搜尋課程教材。"
+                lede="預設值是老師的一組命名行為：使用哪個模型與提示詞、啟用哪些工具，以及子代理人是否套用可選角色。"
                 actions={
                     <>
                         <button
@@ -115,10 +114,7 @@ export function PresetsScreen() {
                             <tr>
                                 <th>預設值</th>
                                 <th>模型</th>
-                                <th>角色群</th>
-                                <th>課程教材</th>
                                 <th>工具</th>
-                                <th>來源</th>
                                 <th />
                             </tr>
                         </thead>
@@ -175,17 +171,7 @@ function PresetRow({
     summary: PresetSummary;
     document: Preset | undefined;
 }) {
-    const cast = document
-        ? document.characters.length > 1
-            ? `orchestrator + ${document.characters.length - 1}`
-            : "single"
-        : "…";
-    const toolCount = document
-        ? document.characters.reduce(
-              (total, character) => total + character.tools.length,
-              0
-          )
-        : null;
+    const toolCount = document ? enabledToolCount(document) : null;
 
     return (
         <tr>
@@ -204,18 +190,8 @@ function PresetRow({
             <td className="mono" style={{ fontSize: 12.5 }}>
                 {document ? (document.model ?? "伺服器預設值") : "…"}
             </td>
-            <td style={{ fontSize: 13 }}>{cast}</td>
-            <td style={{ fontSize: 13 }}>
-                {document ? describeRagMode(document) : "…"}
-            </td>
             <td className="mono" style={{ fontSize: 12.5 }}>
                 {toolCount === null ? "…" : toolCount === 0 ? "—" : toolCount}
-            </td>
-            <td>
-                <PresetSourceTag
-                    builtin={summary.builtin}
-                    shadowed={summary.shadowed_builtin}
-                />
             </td>
             <td className="right">
                 <Link

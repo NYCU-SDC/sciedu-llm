@@ -99,7 +99,7 @@ export function ImportPresetsDialog({ onClose }: { onClose: () => void }) {
                 <textarea
                     className="input mono"
                     spellCheck={false}
-                    placeholder='{ "name": "tutor", "orchestrator": "assistant", "characters": [ … ] }'
+                    placeholder='{ "name": "teacher", "teacher_prompt_name": null, "tools": { "rag": { … }, "subagents": { … } } }'
                     style={{
                         minHeight: 190,
                         maxHeight: "34vh",

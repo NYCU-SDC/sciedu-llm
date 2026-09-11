@@ -4,10 +4,11 @@ A preset lives in one of two places: in code (``DEFAULT_PRESETS``, always
 served, never deletable) or as an item in the Langfuse dataset named by
 ``settings.presets_dataset_name``. The two overlap by design — the code defaults
 are seeded into the dataset at startup when missing — but the code copy is what
-survives a Langfuse outage. This router is the write half of the dataset side:
-it validates a document with the *same* schema the loader uses, stores it as a
-dataset item keyed by the preset name, and refreshes the registry so the change
-is live before the response is sent, rather than up to a TTL later.
+survives a Langfuse outage. Only active dataset items are served; archived items
+are ignored. This router is the write half of the dataset side: it validates a
+document with the *same* schema the loader uses, stores it as an active dataset
+item keyed by the preset name, and refreshes the registry so the change is live
+before the response is sent, rather than up to a TTL later.
 
 Reading the last load result: there is deliberately no ``GET /load-report``.
 ``POST /refresh`` is cheap, idempotent, and returns the same report, so a panel
@@ -21,6 +22,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
 from langfuse import Langfuse
+from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
 
 from app.dependencies import (
@@ -35,6 +37,7 @@ from app.presets import (
     Preset,
     PresetLoadReport,
     PresetRegistry,
+    is_active_preset_item,
 )
 from app.schema.admin.presets import (
     ADMIN_PRESET_RESPONSES,
@@ -101,13 +104,18 @@ async def _find_item(langfuse: Langfuse, dataset_name: str, preset_name: str) ->
 
     Items written here are keyed by preset name, but an item hand-created in the
     Langfuse UI can carry any id, so fall back to matching the document's own
-    ``name``. Returns ``None`` when the dataset itself does not exist.
+    ``name``. Archived items are deliberately invisible. Returns ``None`` when
+    the dataset itself does not exist.
     """
     try:
         dataset = await asyncio.to_thread(langfuse.get_dataset, dataset_name)
     except NotFoundError:
         return None
-    items = list(getattr(dataset, "items", None) or [])
+    items = [
+        item
+        for item in (getattr(dataset, "items", None) or [])
+        if is_active_preset_item(item)
+    ]
     for item in items:
         if str(getattr(item, "id", "")) == preset_name:
             return item
@@ -164,7 +172,8 @@ async def get_preset(name: str, registry: preset_registry_dependency):
         "registry so the preset is live in this response. A document whose "
         "`name` differs from the path is rejected — the two are the same "
         "identity. Writing a preset named after a code default shadows that "
-        "default."
+        "default. The written item is explicitly marked ACTIVE, so saving over "
+        "an archived item reactivates it."
     ),
     responses=ADMIN_PRESET_RESPONSES,
 )
@@ -192,7 +201,10 @@ async def upsert_preset(
         # for a create and for an edit.
         await asyncio.to_thread(
             lambda: langfuse.create_dataset_item(
-                dataset_name=dataset_name, id=name, input=document
+                dataset_name=dataset_name,
+                id=name,
+                input=document,
+                status=DatasetStatus.ACTIVE,
             )
         )
     except Exception as e:

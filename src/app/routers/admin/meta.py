@@ -89,12 +89,11 @@ async def list_datasets(langfuse: langfuse_dependency, settings: settings_depend
 @router.get(
     "/tools",
     response_model=list[ToolInfo],
-    summary="List the tools a preset may grant a character",
+    summary="List the server-side tool registry",
     description=(
-        "The server-side tool registry, in registry order. A preset's `tools` "
-        "entries are validated against exactly this list, so a preset editor "
-        "can offer it as a picker instead of letting an admin guess a name and "
-        "find out at save time. Nothing upstream is called, so this cannot 502."
+        "The server-side tool registry, in registry order. Presets expose these "
+        "through typed tool sections rather than arbitrary name lists. Nothing "
+        "upstream is called, so this cannot 502."
     ),
 )
 async def list_tools():
@@ -108,6 +107,21 @@ async def list_tools():
         for name in registered_tool_names()
         if (spec := get_tool(name)) is not None
     ]
+
+
+@router.get(
+    "/prompts",
+    response_model=list[NamedResource],
+    summary="List all Langfuse prompts",
+    responses=UPSTREAM_RESPONSES,
+)
+async def list_prompts(langfuse: langfuse_dependency):
+    try:
+        prompts = await listings.list_prompt_names(langfuse)
+    except Exception as e:
+        raise _bad_gateway("Failed to list Langfuse prompts", e) from e
+
+    return _resources(prompts)
 
 
 @router.get(

@@ -89,6 +89,12 @@ class _FailingPromptLangfuse(_FakeLangfuse):
         raise RuntimeError("langfuse is down")
 
 
+class _TextPromptLangfuse(_FakeLangfuse):
+    def get_prompt(self, name, type=None):
+        self.prompt_requests.append(name)
+        return SimpleNamespace(compile=lambda **_variables: f"TEXT<{name}>")
+
+
 class _StubRegistry:
     """An in-memory stand-in for ``PresetRegistry``.
 
@@ -124,14 +130,14 @@ TEST_PRESETS: dict[str, Preset] = {
     "solo": Preset(
         name="solo",
         orchestrator="assistant",
-        characters=[PresetCharacter(id="assistant", display_name="助教")],
+        characters=[PresetCharacter(id="assistant", display_name="老師")],
     ),
     # One character with the textbook tool.
     "solo-rag": Preset(
         name="solo-rag",
         orchestrator="assistant",
         characters=[
-            PresetCharacter(id="assistant", display_name="助教", tools=["rag_search"])
+            PresetCharacter(id="assistant", display_name="老師", tools=["rag_search"])
         ],
     ),
     # The same, with a one-step budget so the forced final turn fires.
@@ -140,7 +146,7 @@ TEST_PRESETS: dict[str, Preset] = {
         max_steps=1,
         orchestrator="assistant",
         characters=[
-            PresetCharacter(id="assistant", display_name="助教", tools=["rag_search"])
+            PresetCharacter(id="assistant", display_name="老師", tools=["rag_search"])
         ],
     ),
     # The same, but the model must call a tool on its first step.
@@ -149,7 +155,7 @@ TEST_PRESETS: dict[str, Preset] = {
         tool_choice="required",
         orchestrator="assistant",
         characters=[
-            PresetCharacter(id="assistant", display_name="助教", tools=["rag_search"])
+            PresetCharacter(id="assistant", display_name="老師", tools=["rag_search"])
         ],
     ),
     # Two characters: the orchestrator may summon the second one.
@@ -158,7 +164,7 @@ TEST_PRESETS: dict[str, Preset] = {
         orchestrator="assistant",
         characters=[
             PresetCharacter(
-                id="assistant", display_name="助教", tools=["summon_subagent"]
+                id="assistant", display_name="老師", tools=["summon_subagent"]
             ),
             PresetCharacter(
                 id="subagent",
@@ -175,7 +181,7 @@ TEST_PRESETS: dict[str, Preset] = {
         characters=[
             PresetCharacter(
                 id="assistant",
-                display_name="助教",
+                display_name="老師",
                 tools=["rag_search", "summon_subagent"],
             ),
             PresetCharacter(
@@ -187,20 +193,63 @@ TEST_PRESETS: dict[str, Preset] = {
             ),
         ],
     ),
+    # Tool-based subagents can run without a forced character or Langfuse prompt.
+    "pair-normal": Preset.model_validate(
+        {
+            "name": "pair-normal",
+            "tools": {
+                "rag": {"enable_tool": False, "force": False},
+                "subagents": {
+                    "enable_tool": True,
+                    "character_forcing": False,
+                    "prompt_name": None,
+                    "max_steps": 3,
+                },
+            },
+        }
+    ),
+    "multi-persona": Preset.model_validate(
+        {
+            "name": "multi-persona",
+            "tools": {
+                "rag": {"enable_tool": False, "force": False},
+                "subagents": {
+                    "enable_tool": True,
+                    "character_forcing": True,
+                    "prompt_name": None,
+                    "max_steps": 3,
+                    "personas": [
+                        {
+                            "id": "student",
+                            "display_name": "學生",
+                            "prompt_name": "agents/student",
+                            "max_steps": 3,
+                        },
+                        {
+                            "id": "ta",
+                            "display_name": "TA",
+                            "prompt_name": "agents/ta",
+                            "max_steps": 4,
+                        },
+                    ],
+                },
+            },
+        }
+    ),
     # Retrieval as an unconditional pre-step rather than a tool the model may
     # call. No default ships this way; a dataset preset still may.
     "solo-forced-rag": Preset(
         name="solo-forced-rag",
         rag_mode="forced",
         orchestrator="assistant",
-        characters=[PresetCharacter(id="assistant", display_name="助教")],
+        characters=[PresetCharacter(id="assistant", display_name="老師")],
     ),
     # Pins its own model, inside the allow-list.
     "solo-custom-model": Preset(
         name="solo-custom-model",
         model="custom-model",
         orchestrator="assistant",
-        characters=[PresetCharacter(id="assistant", display_name="助教")],
+        characters=[PresetCharacter(id="assistant", display_name="老師")],
     ),
     # Pins a model this deployment does not allow — a misconfiguration, not a
     # bad request.
@@ -208,7 +257,7 @@ TEST_PRESETS: dict[str, Preset] = {
         name="solo-bad-model",
         model="gpt-4",
         orchestrator="assistant",
-        characters=[PresetCharacter(id="assistant", display_name="助教")],
+        characters=[PresetCharacter(id="assistant", display_name="老師")],
     ),
 }
 
@@ -448,11 +497,11 @@ def test_agents_plain_text_run_emits_typed_events(client, override_openai):
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
     assert _parse_sse(response.text) == [
-        {"type": "agent_start", "agent": "assistant"},
+        {"type": "agent_start", "agent": "teacher"},
         {
             "type": "part_start",
             "index": 0,
-            "part": {"type": "text", "id": "p0", "agent": "assistant"},
+            "part": {"type": "text", "id": "p0", "agent": "teacher"},
         },
         {"type": "delta", "index": 0, "delta": "Hello, "},
         {"type": "delta", "index": 0, "delta": "world!"},
@@ -462,11 +511,11 @@ def test_agents_plain_text_run_emits_typed_events(client, override_openai):
             "part": {
                 "type": "text",
                 "id": "p0",
-                "agent": "assistant",
+                "agent": "teacher",
                 "text": "Hello, world!",
             },
         },
-        {"type": "agent_end", "agent": "assistant"},
+        {"type": "agent_end", "agent": "teacher"},
         {"type": "done", "finishReason": "stop", "status": "completed"},
     ]
 
@@ -488,8 +537,8 @@ def test_agents_emits_cast_for_a_two_character_preset(client, override_openai):
     response = _post(client, preset="pair")
 
     cast = _of_type(_parse_sse(response.text), "cast")[0]
-    assert [c["id"] for c in cast["characters"]] == ["assistant", "subagent"]
-    assert cast["characters"][0]["displayName"] == "助教"
+    assert [c["id"] for c in cast["characters"]] == ["teacher", "student"]
+    assert cast["characters"][0]["displayName"] == "老師"
     assert cast["characters"][1]["displayName"] == "學生"
 
 
@@ -656,7 +705,7 @@ def test_agents_rag_search_streams_arguments_then_result(
     assert tool_call_start["part"] == {
         "type": "tool_call",
         "id": "p0",
-        "agent": "assistant",
+        "agent": "teacher",
         "tool_call_id": "call_1",
         "name": "rag_search",
     }
@@ -773,8 +822,8 @@ def test_agents_summon_subagent_streams_the_subagent_inline(client, override_ope
     summon_start = events[5]
     assert summon_start == {
         "type": "agent_start",
-        "agent": "subagent",
-        "parent": "assistant",
+        "agent": "student",
+        "parent": "teacher",
         "summonedBy": "call_1",
     }
     # The mechanism is hidden; what the subagent says is not.
@@ -784,7 +833,7 @@ def test_agents_summon_subagent_streams_the_subagent_inline(client, override_ope
     assert events[8]["part"] == {
         "type": "text",
         "id": "p1",
-        "agent": "subagent",
+        "agent": "student",
         "text": "光反應發生在類囊體膜上",
     }
     # The subagent's answer is handed back to the orchestrator.
@@ -805,6 +854,109 @@ def test_agents_subagent_gets_its_langfuse_prompt_and_the_summon_task(
         {"role": "system", "content": "PROMPT<agents/subagent>"},
         {"role": "user", "content": "解釋光反應"},
     ]
+
+
+def test_agents_normal_subagent_gets_the_task_without_character_forcing(
+    client, override_openai, fake_langfuse
+):
+    completions = override_openai(_summon_script())
+
+    response = _post(client, preset="pair-normal")
+
+    assert response.status_code == 200
+    cast = _of_type(_parse_sse(response.text), "cast")[0]
+    assert cast["characters"] == [
+        {"id": "teacher", "displayName": "老師", "role": "teacher"},
+        {"id": "subagent", "displayName": "子代理人", "role": "assistant"},
+    ]
+    assert fake_langfuse.prompt_requests == []
+    assert completions.calls[1]["messages"] == [
+        {"role": "user", "content": "解釋光反應"}
+    ]
+
+
+def test_agents_exposes_and_summons_one_of_multiple_personas(
+    client, override_openai, fake_langfuse
+):
+    script = _summon_script()
+    script[0][0].choices[0].delta.tool_calls[
+        0
+    ].function.arguments = '{"prompt": "檢查解題步驟", "persona": "TA"}'
+    completions = override_openai(script)
+
+    events = _parse_sse(_post(client, preset="multi-persona").text)
+
+    cast = _of_type(events, "cast")[0]
+    assert [character["id"] for character in cast["characters"]] == [
+        "teacher",
+        "student",
+        "ta",
+    ]
+    summon = next(
+        tool
+        for tool in completions.calls[0]["tools"]
+        if tool["function"]["name"] == "summon_subagent"
+    )["function"]
+    assert summon["parameters"]["properties"]["persona"]["enum"] == [
+        "學生",
+        "TA",
+    ]
+    assert summon["parameters"]["required"] == ["prompt", "persona"]
+    assert {
+        "type": "agent_start",
+        "agent": "ta",
+        "parent": "teacher",
+        "summonedBy": "call_1",
+    } in events
+    assert fake_langfuse.prompt_requests == ["agents/ta"]
+
+
+def test_agents_turns_a_text_persona_prompt_into_system_and_user_messages(
+    client, override_openai, override_langfuse
+):
+    langfuse = override_langfuse(_TextPromptLangfuse())
+    script = _summon_script()
+    script[0][0].choices[0].delta.tool_calls[
+        0
+    ].function.arguments = '{"prompt": "檢查解題步驟", "persona": "ta"}'
+    completions = override_openai(script)
+
+    response = _post(client, preset="multi-persona")
+
+    assert response.status_code == 200
+    assert completions.calls[1]["messages"] == [
+        {"role": "system", "content": "TEXT<agents/ta>"},
+        {"role": "user", "content": "檢查解題步驟"},
+    ]
+    assert langfuse.prompt_requests == ["agents/ta"]
+
+
+def test_agents_rejects_a_missing_persona_when_multiple_are_available(
+    client, override_openai
+):
+    completions = override_openai(
+        [
+            _summon_script()[0],
+            [_text_chunk("我會自己回答"), _text_chunk(None, "stop")],
+        ]
+    )
+
+    events = _parse_sse(_post(client, preset="multi-persona").text)
+
+    assert len(completions.calls) == 2
+    assert not any(
+        event.get("type") == "agent_start" and event.get("agent") != "teacher"
+        for event in events
+    )
+    result = next(
+        event["part"]
+        for event in _of_type(events, "part_end")
+        if event["part"]["type"] == "tool_result"
+    )
+    assert result["status"] == "error"
+    assert result["code"] == "invalid_arguments"
+    assert "學生（ID: student）" in result["content"]
+    assert "TA（ID: ta）" in result["content"]
 
 
 def test_agents_subagent_cannot_summon_another_subagent(
@@ -830,7 +982,7 @@ def test_agents_subagent_failure_still_closes_the_speaker(client, override_opena
     events = _parse_sse(_post(client, preset="pair").text)
 
     # The frontend is never left showing the subagent as still speaking.
-    assert {"type": "agent_end", "agent": "subagent"} in events
+    assert {"type": "agent_end", "agent": "student"} in events
     result = [
         e["part"]
         for e in _of_type(events, "part_end")
@@ -1246,12 +1398,12 @@ def test_agents_non_streaming_includes_the_cast(client, override_openai):
 
     body = _post(client, preset="pair", stream=False).json()
 
-    assert [c["id"] for c in body["cast"]] == ["assistant", "subagent"]
+    assert [c["id"] for c in body["cast"]] == ["teacher", "student"]
     assert [p["agent"] for p in body["parts"]] == [
-        "assistant",
-        "subagent",
-        "assistant",
-        "assistant",
+        "teacher",
+        "student",
+        "teacher",
+        "teacher",
     ]
 
 
