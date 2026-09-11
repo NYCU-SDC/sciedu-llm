@@ -31,6 +31,7 @@ import {
     configuredSubagentPersonas,
     labelForLoc,
     MAX_SUBAGENT_PERSONAS,
+    normalisePreset,
     ragSelection,
     setRagSelection,
     type RagSelection,
@@ -64,7 +65,11 @@ export function PresetEditorScreen() {
     const detail: PresetDetail | undefined = loaded.data;
     const [draft, setDraft] = useState<Preset | null>(null);
     const fresh = useMemo(() => blankPreset(), []);
-    const base = isNew ? fresh : (detail?.definition ?? null);
+    const base = useMemo(
+        () =>
+            isNew ? fresh : detail ? normalisePreset(detail.definition) : null,
+        [detail, fresh, isNew]
+    );
     const preset = draft ?? base;
 
     const editPreset = (fn: (previous: Preset) => Preset) =>

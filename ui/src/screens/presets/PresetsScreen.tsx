@@ -14,7 +14,7 @@ import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
 import { Loading, PageHeader } from "../../components/States";
 import { formatUnixSeconds, pluralise } from "../../lib/format";
 import { ImportPresetsDialog } from "./ImportPresetsDialog";
-import { enabledToolCount } from "./presetShape";
+import { enabledToolCount, normalisePreset } from "./presetShape";
 
 export function PresetsScreen() {
     const navigate = useNavigate();
@@ -41,7 +41,7 @@ export function PresetsScreen() {
     const documents = new Map<string, Preset>();
     (presets.data ?? []).forEach((summary, index) => {
         const document = details[index]?.data?.definition;
-        if (document) documents.set(summary.name, document);
+        if (document) documents.set(summary.name, normalisePreset(document));
     });
 
     const errorEntries = Object.entries(report.data?.errors ?? {});

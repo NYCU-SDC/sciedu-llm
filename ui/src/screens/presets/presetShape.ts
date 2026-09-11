@@ -1,14 +1,15 @@
 /* Mapping and local validation for the tool-based preset document. */
 
-import { locPath } from "../../api/errors";
+import { locPath } from "../../api/errors.ts";
 import {
     MAX_STEPS_CAP,
     PRESET_ID_PATTERN,
     type Preset,
+    type PresetTools,
     type SubagentPersona,
     type SubagentToolConfig,
     type ToolChoice,
-} from "../../api/types";
+} from "../../api/types.ts";
 
 export type RagSelection = "disabled" | "enabled" | "forced";
 export const MAX_SUBAGENT_PERSONAS = 8;
@@ -245,10 +246,21 @@ function wholeStep(value: unknown): boolean {
     );
 }
 
-export function normalisePreset(value: Record<string, unknown>): Preset {
+/** Normalise an API/import payload before any screen dereferences its shape.
+ *
+ * The legacy branch is intentionally retained while independently deployed UI
+ * and backend containers can overlap during a rollout. A new UI may briefly
+ * receive the pre-tool-section `characters`/`rag_mode` response from an older
+ * backend; treating the TypeScript response annotation as runtime validation
+ * made that ordinary deployment window crash the whole presets screen.
+ */
+export function normalisePreset(value: unknown): Preset {
+    if (!isRecord(value)) return blankPreset();
+
     const tools = isRecord(value.tools) ? value.tools : {};
     const rag = isRecord(tools.rag) ? tools.rag : {};
     const subagents = isRecord(tools.subagents) ? tools.subagents : {};
+    const legacy = !isRecord(value.tools) ? normaliseLegacyTools(value) : null;
     return {
         name: typeof value.name === "string" ? value.name : "",
         description:
@@ -261,42 +273,112 @@ export function normalisePreset(value: Record<string, unknown>): Preset {
             ? (value.tool_choice as ToolChoice)
             : "auto",
         teacher_prompt_name:
-            typeof value.teacher_prompt_name === "string"
-                ? value.teacher_prompt_name
+            legacy !== null
+                ? legacy.teacherPromptName
+                : typeof value.teacher_prompt_name === "string"
+                  ? value.teacher_prompt_name
+                  : null,
+        tools: legacy?.tools ?? {
+            rag: normaliseRag(rag),
+            subagents: normaliseSubagents(subagents),
+        },
+    };
+}
+
+function normaliseRag(value: Record<string, unknown>) {
+    return {
+        enable_tool: value.enable_tool === true,
+        force: value.force === true,
+    };
+}
+
+function normaliseSubagents(
+    value: Record<string, unknown>
+): SubagentToolConfig {
+    return {
+        enable_tool: value.enable_tool === true,
+        character_forcing: value.character_forcing === true,
+        prompt_name:
+            typeof value.prompt_name === "string" ? value.prompt_name : null,
+        max_steps: typeof value.max_steps === "number" ? value.max_steps : 3,
+        personas: Array.isArray(value.personas)
+            ? value.personas.filter(isRecord).map(normalisePersona)
+            : [],
+    };
+}
+
+function normalisePersona(value: Record<string, unknown>): SubagentPersona {
+    return {
+        id: typeof value.id === "string" ? value.id : "",
+        display_name:
+            typeof value.display_name === "string" ? value.display_name : "",
+        prompt_name:
+            typeof value.prompt_name === "string" ? value.prompt_name : "",
+        max_steps: typeof value.max_steps === "number" ? value.max_steps : 3,
+    };
+}
+
+function stringList(value: unknown): string[] {
+    return Array.isArray(value)
+        ? value.filter((entry): entry is string => typeof entry === "string")
+        : [];
+}
+
+function normaliseLegacyTools(value: Record<string, unknown>): {
+    teacherPromptName: string | null;
+    tools: PresetTools;
+} | null {
+    if (!Array.isArray(value.characters)) return null;
+
+    const characters = value.characters.filter(isRecord);
+    const orchestrator =
+        typeof value.orchestrator === "string"
+            ? value.orchestrator
+            : "assistant";
+    const teacher =
+        characters.find((character) => character.id === orchestrator) ??
+        characters[0] ??
+        {};
+    const subagentCharacters = characters.filter(
+        (character) => character !== teacher
+    );
+    const firstSubagent = subagentCharacters[0] ?? {};
+    const teacherTools = stringList(teacher.tools);
+    const allTools = characters.flatMap((character) =>
+        stringList(character.tools)
+    );
+    const subagentsEnabled =
+        teacherTools.includes("summon_subagent") &&
+        subagentCharacters.length > 0;
+    const promptName =
+        typeof firstSubagent.prompt_name === "string"
+            ? firstSubagent.prompt_name
+            : null;
+
+    return {
+        teacherPromptName:
+            typeof teacher.prompt_name === "string"
+                ? teacher.prompt_name
                 : null,
         tools: {
             rag: {
-                enable_tool: rag.enable_tool === true,
-                force: rag.force === true,
+                enable_tool:
+                    value.rag_mode === "forced" ||
+                    allTools.includes("rag_search"),
+                force: value.rag_mode === "forced",
             },
             subagents: {
-                enable_tool: subagents.enable_tool === true,
-                character_forcing: subagents.character_forcing === true,
-                prompt_name:
-                    typeof subagents.prompt_name === "string"
-                        ? subagents.prompt_name
-                        : null,
+                enable_tool: subagentsEnabled,
+                character_forcing: subagentsEnabled && promptName !== null,
+                prompt_name: promptName,
                 max_steps:
-                    typeof subagents.max_steps === "number"
-                        ? subagents.max_steps
+                    typeof firstSubagent.max_steps === "number"
+                        ? firstSubagent.max_steps
                         : 3,
-                personas: Array.isArray(subagents.personas)
-                    ? subagents.personas.filter(isRecord).map((persona) => ({
-                          id: typeof persona.id === "string" ? persona.id : "",
-                          display_name:
-                              typeof persona.display_name === "string"
-                                  ? persona.display_name
-                                  : "",
-                          prompt_name:
-                              typeof persona.prompt_name === "string"
-                                  ? persona.prompt_name
-                                  : "",
-                          max_steps:
-                              typeof persona.max_steps === "number"
-                                  ? persona.max_steps
-                                  : 3,
-                      }))
-                    : [],
+                personas:
+                    subagentCharacters.length > 1
+                        ? subagentCharacters.map(normalisePersona)
+                        : [],
             },
         },
     };
