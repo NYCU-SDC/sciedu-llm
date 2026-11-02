@@ -1179,3 +1179,103 @@ def test_latest_user_message_skips_blank_and_non_string_content():
 
 def test_latest_user_message_returns_none_without_a_user_turn():
     assert latest_user_message([{"role": "system", "content": "x"}]) is None
+
+
+@pytest.mark.asyncio
+async def test_legacy_presets_inherit_old_server_corpus_without_overriding_explicit_selections():
+    from app.rag_cache import RagBuildCache
+    from tests.app.rag_cache_test import FakePipeline
+
+    legacy = _preset(name="legacy")
+    legacy["tools"]["rag"]["enable_tool"] = True
+    empty = _preset(name="empty")
+    empty["tools"]["rag"] = {"enable_tool": True, "corpus_datasets": []}
+    selected = _preset(name="selected")
+    selected["tools"]["rag"] = {"enable_tool": True, "corpus_datasets": ["corpus/chem"]}
+    langfuse = _FakeLangfuse(
+        [_item(document["name"], document) for document in (legacy, empty, selected)]
+    )
+    registry = PresetRegistry(
+        langfuse=langfuse,
+        settings=_settings(rag_corpus_datasets=" corpus/bio,corpus/bio "),
+    )
+    await registry.refresh()
+    old = await registry.get("legacy")
+    assert old.tools.rag.corpus_datasets == ["corpus/bio"]
+    assert (await registry.get("empty")).tools.rag.corpus_datasets == []
+    assert (await registry.get("selected")).tools.rag.corpus_datasets == ["corpus/chem"]
+    assert (
+        "corpus_datasets" not in legacy["tools"]["rag"]
+    )  # No upstream writes/mutations.
+    assert DEFAULT_PRESETS["default-agents"].tools.rag.corpus_datasets == []
+    assert not registry.is_dataset_preset("default-agents")
+    assert registry.is_dataset_preset("legacy")
+    cache = RagBuildCache(FakePipeline)
+    manager = cache.ensure(old)
+    await manager.wait()
+    assert cache.pipeline(old).corpus_dataset_names == ["corpus/bio"]
+    assert cache.ensure(await registry.get("default-agents")) is manager
+    assert cache.pipeline(await registry.get("empty")) is None
+    assert cache.manager(await registry.get("selected")) is not manager
+    await registry.refresh()
+    assert cache.ensure(await registry.get("legacy")) is manager
+    await cache.aclose()
+
+
+@pytest.mark.asyncio
+async def test_legacy_presets_preserve_corpus_folder_discovery(monkeypatch):
+    from app import listings
+
+    calls = []
+
+    async def discover(_langfuse, **kwargs):
+        calls.append(kwargs)
+        return [("bio", "corpus/bio")], []
+
+    monkeypatch.setattr(listings, "list_dataset_names", discover)
+    registry = PresetRegistry(
+        langfuse=_FakeLangfuse(),
+        settings=_settings(
+            rag_corpus_datasets="",
+            corpus_dataset_folder="corpus",
+            questions_dataset_folder="questions",
+        ),
+    )
+    await registry.refresh()
+    assert (await registry.get("default-chat")).tools.rag.corpus_datasets == [
+        "corpus/bio"
+    ]
+    await registry.refresh()
+    assert len(calls) == 1
+    assert calls[0] == {"corpus_folder": "corpus", "questions_folder": "questions"}
+
+
+@pytest.mark.asyncio
+async def test_legacy_code_defaults_keep_configured_corpus_when_preset_loading_fails():
+    registry = PresetRegistry(
+        langfuse=_FakeLangfuse(error=RuntimeError("unavailable")),
+        settings=_settings(rag_corpus_datasets="corpus/bio"),
+    )
+    report = await registry.refresh()
+    assert report.fetched_at is None
+    assert (await registry.get("default-agents")).tools.rag.corpus_datasets == [
+        "corpus/bio"
+    ]
+    assert not registry.is_dataset_preset("default-agents")
+
+
+@pytest.mark.asyncio
+async def test_seeding_does_not_turn_missing_legacy_corpus_into_an_explicit_empty_selection():
+    langfuse = _SeedableLangfuse()
+    await ensure_default_presets(langfuse, _settings())
+    document = next(
+        doc for _, name, doc in langfuse.written if name == "default-agents"
+    )
+    assert "corpus_datasets" not in document["tools"]["rag"]
+    registry = PresetRegistry(
+        langfuse=langfuse, settings=_settings(rag_corpus_datasets="corpus/bio")
+    )
+    await registry.refresh()
+    assert (await registry.get("default-agents")).tools.rag.corpus_datasets == [
+        "corpus/bio"
+    ]

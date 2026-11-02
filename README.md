@@ -72,11 +72,12 @@ an explicit rebuild; polling does not retry them. A forced rebuild refreshes a
 shared entry after dataset contents change in Langfuse. Cancelling that build
 affects every preset sharing it; other entries keep running.
 
-**Migration:** `RAG_CORPUS_DATASETS` and automatic corpus-folder discovery no
-longer select retrieval data. Existing preset documents still load, with an
-empty corpus by default. Select and save the intended datasets for each
-RAG-enabled preset, including `default-chat` and `default-agents`, before using
-retrieval. An empty corpus never falls back to another preset's index.
+**Migration:** Presets that omit `tools.rag.corpus_datasets` retain the previous
+server corpus: `RAG_CORPUS_DATASETS` when configured, otherwise the discovered
+corpus folder. The registry resolves that selection into each legacy preset
+without rewriting Langfuse data. Save the intended datasets in each preset to
+finish migration. Explicit selections always win, including `[]`, which means
+no corpus and never inherits another preset's index.
 
 ### Seeding Langfuse
 

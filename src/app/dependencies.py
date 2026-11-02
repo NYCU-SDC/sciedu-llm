@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     chat_preset_name: str = "default-chat-plain"
     chat_rag_preset_name: str = "default-chat"
 
+    # Rollout compatibility for presets that predate per-preset corpus selection.
+    # Explicit preset selections (including []) always take precedence.
+    rag_corpus_datasets: str = ""
+
+    @property
+    def rag_corpus_dataset_names(self) -> list[str]:
+        return sorted(
+            {
+                name.strip()
+                for name in self.rag_corpus_datasets.split(",")
+                if name.strip()
+            }
+        )
+
     # How far back `GET /admin/evals/history` looks. Not a preference: Langfuse's
     # experiments endpoint requires a `fromStartTime`, so a history listing is
     # always a window, and this is how wide.
