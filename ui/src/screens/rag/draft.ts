@@ -6,7 +6,7 @@
 
 import {
     REBUILD_KEYS,
-    type RagConfigResponse,
+    type RagConfigValues,
     type RagConfigUpdate,
 } from "../../api/types";
 
@@ -83,7 +83,7 @@ export const FIELD_LABELS: Record<keyof RagDraft, string> = {
  * server declares `gt=0`, so a 0 would come back as a 422. */
 const ALLOWS_ZERO: ReadonlySet<string> = new Set(["chunk_overlap"]);
 
-export function toDraft(config: RagConfigResponse): RagDraft {
+export function toDraft(config: RagConfigValues): RagDraft {
     return {
         embedding_model: config.embedding_model,
         rerank_model: config.rerank_model,

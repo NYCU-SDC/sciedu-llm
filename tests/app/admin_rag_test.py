@@ -170,3 +170,51 @@ async def test_reset_restores_global_settings_and_reuses_cached_index(stack):
     assert response.json()["config"]["chunk_size"] == RAGConfig().chunk_size
     assert cache.manager(await registry.get("a")) is original
     assert original.pipeline.config.final_k == RAGConfig().final_k
+
+
+async def test_global_settings_do_not_select_a_preset_or_start_a_build(stack):
+    client, cache, registry = stack
+    response = await client.get("/admin/rag/settings")
+    assert response.status_code == 200
+    assert response.json() == cache.config_snapshot()
+    assert "preset" not in response.json()
+    assert "corpus_datasets" not in response.json()
+    assert cache.manager(await registry.get("a")).state.status == "idle"
+
+
+async def test_global_settings_remain_editable_without_any_presets(stack):
+    client, cache, registry = stack
+    registry.presets.clear()
+    assert (await client.get("/admin/rag/settings")).status_code == 200
+    response = await client.patch("/admin/rag/settings", json={"final_k": 9})
+    assert response.status_code == 200
+    assert response.json()["config"]["final_k"] == 9
+    assert response.json()["build_started"] is False
+    response = await client.post("/admin/rag/settings/reset")
+    assert response.status_code == 200
+    assert cache.config_snapshot()["final_k"] == RAGConfig().final_k
+
+
+async def test_global_settings_validate_atomically_and_reject_corpus_updates(stack):
+    client, cache, _ = stack
+    before = cache.config_snapshot()
+    for payload in (
+        {"corpus_datasets": ["corpus/other"]},
+        {"chunk_overlap": 10000, "final_k": 25},
+    ):
+        response = await client.patch("/admin/rag/settings", json=payload)
+        assert response.status_code == 422
+        assert cache.config_snapshot() == before
+
+
+async def test_global_build_settings_warm_each_distinct_preset_corpus(stack):
+    client, cache, registry = stack
+    response = await client.patch("/admin/rag/settings", json={"chunk_size": 800})
+    assert response.status_code == 200
+    assert response.json()["build_started"]
+    first = cache.manager(await registry.get("a"))
+    second = cache.manager(await registry.get("chem"))
+    assert cache.manager(await registry.get("b")) is first
+    await asyncio.gather(first.wait(), second.wait())
+    assert first.pipeline.corpus_dataset_names == ["corpus/bio"]
+    assert second.pipeline.corpus_dataset_names == ["corpus/chem"]

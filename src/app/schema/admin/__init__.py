@@ -26,6 +26,7 @@ from app.schema.admin.rag import (
     RAGConfigUpdate,
     RAGConfigUpdateResponse,
     RAGConfigValues,
+    RAGSettingsUpdateResponse,
 )
 
 __all__ = [
@@ -49,5 +50,6 @@ __all__ = [
     "RAGConfigUpdate",
     "RAGConfigUpdateResponse",
     "RAGConfigValues",
+    "RAGSettingsUpdateResponse",
     "ToolInfo",
 ]

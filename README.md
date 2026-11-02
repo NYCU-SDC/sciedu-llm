@@ -52,13 +52,18 @@ Choose the corpus in each preset's `tools.rag.corpus_datasets`, for example:
 }
 ```
 
-The preset editor provides a corpus picker. RAG settings remain global on the
-retrieval settings page, which also lets you select a preset to inspect,
-rebuild, or cancel its index build. The API uses
+Each preset page provides its own corpus picker, index status, rebuild, and
+cancellation controls. The **伺服器設定** page groups global RAG settings and
+available models/prompts; it does not select a preset. Old `/rag` and
+`/reference` bookmarks redirect to the corresponding server settings section.
+The index API uses
 `GET /admin/rag/config?preset=<name>` and the same query parameter for
 `POST /admin/rag/rebuild` and `POST /admin/rag/rebuild/cancel`. Omitting it
 selects `AGENTS_DEFAULT_PRESET`. `PATCH /admin/rag/config` and
-`POST /admin/rag/reset` update global settings; they never change preset corpora.
+`POST /admin/rag/reset` remain available for existing clients. The server
+settings page uses `GET/PATCH /admin/rag/settings` and
+`POST /admin/rag/settings/reset`, which work even without a configured default
+preset and never change preset corpora.
 
 Indexes are cached in memory for the life of the server process. The cache key
 contains the sorted, deduplicated corpus names, embedding model, embedding

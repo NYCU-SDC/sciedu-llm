@@ -73,6 +73,12 @@ export interface RagConfigUpdateResponse {
     build_started: boolean;
 }
 
+/** Global settings update, independent of preset availability. */
+export interface RagSettingsUpdateResponse {
+    config: RagConfigValues;
+    build_started: boolean;
+}
+
 /** Keys of the config whose value only takes effect once the index is rebuilt.
  * Mirrors the cache key: chunking, embedding batch size and
  * the embedding model are baked into the stored vectors. */

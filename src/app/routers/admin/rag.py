@@ -21,10 +21,50 @@ from app.schema.admin.rag import (
     RAGConfigResponse,
     RAGConfigUpdate,
     RAGConfigUpdateResponse,
+    RAGConfigValues,
+    RAGSettingsUpdateResponse,
 )
 from rag.config import RAGConfig
 
 router = APIRouter(prefix="/rag", tags=["Admin"], responses=ADMIN_RAG_RESPONSES)
+
+
+@router.get("/settings", response_model=RAGConfigValues)
+async def get_rag_settings(cache: rag_cache_dependency):
+    """Read server-wide settings without selecting a preset or starting a build."""
+    return cache.config_snapshot()
+
+
+@router.patch("/settings", response_model=RAGSettingsUpdateResponse)
+async def update_rag_settings(
+    update: RAGConfigUpdate,
+    cache: rag_cache_dependency,
+    registry: preset_registry_dependency,
+):
+    """Apply global settings independently of preset availability."""
+    overrides = update.model_dump(
+        exclude_unset=True, exclude_none=True, exclude={"rebuild"}
+    )
+    try:
+        cache.apply_overrides(overrides)
+    except ValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    started = cache.warm(registry.snapshot().values()) if update.rebuild else False
+    return RAGSettingsUpdateResponse(
+        config=cache.config_snapshot(), build_started=started
+    )
+
+
+@router.post("/settings/reset", response_model=RAGSettingsUpdateResponse)
+async def reset_rag_settings(
+    cache: rag_cache_dependency, registry: preset_registry_dependency
+):
+    """Reset server-wide settings and warm missing indexes for enabled presets."""
+    cache.apply_overrides(RAGConfig().model_dump())
+    started = cache.warm(registry.snapshot().values())
+    return RAGSettingsUpdateResponse(
+        config=cache.config_snapshot(), build_started=started
+    )
 
 
 async def _preset(registry: PresetRegistry, name: str) -> Preset:
