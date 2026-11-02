@@ -2,25 +2,24 @@ import { useJudgePrompts, useModels } from "../../api/hooks";
 import type { ModelInfo } from "../../api/types";
 import { QueryError } from "../../components/ErrorPanel";
 import { Panel } from "../../components/Panel";
-import { Loading, PageHeader } from "../../components/States";
+import { Loading } from "../../components/States";
 import {
     groupModelsByMode,
     isChatModelMode,
     isModelAllowed,
 } from "./modelGroups";
 
-export function ReferenceScreen() {
+export function AvailableResourcesPanel() {
     const models = useModels();
     const prompts = useJudgePrompts();
     const modelGroups = groupModelsByMode(models.data?.models ?? []);
 
     return (
         <>
-            <PageHeader
-                kicker="系統概覽"
-                title="可用資源"
-                lede="服務目前可存取的模型與評分提示詞。此處無法編輯；資料來自模型伺服器與 Langfuse。"
-            />
+            <p className="note">
+                服務目前可存取的模型與評分提示詞。資料來自模型伺服器與
+                Langfuse。
+            </p>
 
             <div className="col" style={{ marginTop: 20 }}>
                 {models.isError ? (

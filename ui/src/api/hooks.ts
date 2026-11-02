@@ -27,13 +27,15 @@ import {
     type PresetLoadReport,
     type PresetSummary,
     type RagConfigResponse,
+    type RagConfigValues,
+    type RagSettingsUpdateResponse,
     type RagConfigUpdate,
-    type RagConfigUpdateResponse,
 } from "./types";
 
 export const keys = {
     health: ["health"] as const,
     ragConfig: ["rag", "config"] as const,
+    ragSettings: ["rag", "settings"] as const,
     presets: ["presets", "list"] as const,
     preset: (name: string) => ["presets", "detail", name] as const,
     presetReport: ["presets", "report"] as const,
@@ -122,9 +124,13 @@ const BUILD_POLL_MS = 2000;
  * (a build finishing, a cancelled build settling, another
  * operator applying a change). Polls while a build is running, which is the one
  * thing here that changes with nobody touching it. */
-export function useRagConfig(preset = ""): UseQueryResult<RagConfigResponse> {
+export function useRagConfig(
+    preset = "",
+    enabled = true
+): UseQueryResult<RagConfigResponse> {
     return useQuery({
         queryKey: [...keys.ragConfig, preset],
+        enabled,
         queryFn: ({ signal }) =>
             api.get<RagConfigResponse>(
                 `/admin/rag/config${presetQuery(preset)}`,
@@ -143,47 +149,54 @@ export function useRagConfig(preset = ""): UseQueryResult<RagConfigResponse> {
     });
 }
 
-/** PATCH, POST /rebuild, POST /rebuild/cancel and POST /reset all answer at
- * once: a rebuild is scheduled server-side, not awaited, so none of these needs
- * a long timeout. Each writes the returned config straight into the cache so the
- * screen never shows a stale snapshot, and `useRagConfig` takes over polling
- * from there. */
-export function useRagMutations(preset = "") {
+/** Build controls always target the saved corpus of one preset. */
+export function usePresetRagMutations(preset: string) {
     const query = presetQuery(preset);
     const client = useQueryClient();
     const settle = (config: RagConfigResponse) => {
         void client.invalidateQueries({ queryKey: keys.ragConfig });
         client.setQueryData([...keys.ragConfig, preset], config);
     };
-
-    const apply = useMutation({
-        mutationFn: (update: RagConfigUpdate) =>
-            api.patch<RagConfigUpdateResponse>(
-                `/admin/rag/config${query}`,
-                update
-            ),
-        onSuccess: (result) => settle(result.config),
-    });
-
     const rebuild = useMutation({
         mutationFn: () =>
             api.post<RagConfigResponse>(`/admin/rag/rebuild${query}`),
         onSuccess: settle,
     });
-
     const cancelBuild = useMutation({
         mutationFn: () =>
             api.post<RagConfigResponse>(`/admin/rag/rebuild/cancel${query}`),
         onSuccess: settle,
     });
+    return { rebuild, cancelBuild };
+}
 
+export function useRagSettings(): UseQueryResult<RagConfigValues> {
+    return useQuery({
+        queryKey: keys.ragSettings,
+        queryFn: ({ signal }) =>
+            api.get<RagConfigValues>("/admin/rag/settings", signal),
+        staleTime: 0,
+        refetchOnMount: "always",
+    });
+}
+
+export function useRagSettingsMutations() {
+    const client = useQueryClient();
+    const settle = (result: RagSettingsUpdateResponse) => {
+        client.setQueryData(keys.ragSettings, result.config);
+        void client.invalidateQueries({ queryKey: keys.ragConfig });
+    };
+    const apply = useMutation({
+        mutationFn: (update: RagConfigUpdate) =>
+            api.patch<RagSettingsUpdateResponse>("/admin/rag/settings", update),
+        onSuccess: settle,
+    });
     const reset = useMutation({
         mutationFn: () =>
-            api.post<RagConfigUpdateResponse>(`/admin/rag/reset${query}`),
-        onSuccess: (result) => settle(result.config),
+            api.post<RagSettingsUpdateResponse>("/admin/rag/settings/reset"),
+        onSuccess: settle,
     });
-
-    return { apply, rebuild, cancelBuild, reset };
+    return { apply, reset };
 }
 
 // ── presets ───────────────────────────────────────────────────────────────

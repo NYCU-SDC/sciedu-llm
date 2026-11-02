@@ -4,15 +4,14 @@ import { LANGFUSE_URL } from "../api/client";
 import { errorMessage } from "../api/errors";
 import { useHealth } from "../api/hooks";
 
-/** Exactly five destinations. The preset editor and the run detail are
+/** Four destinations. The preset editor and the run detail are
  * sub-screens of their list, reached by opening a row — not nav entries. */
 const NAV = [
-    { to: "/rag", label: "檢索設定" },
     { to: "/presets", label: "行為預設" },
     { to: "/evals", label: "評估" },
     // Not part of docs/admin-ui-spec.md: a manual tester for POST /agents.
     { to: "/playground", label: "測試區" },
-    { to: "/reference", label: "可用資源" },
+    { to: "/server", label: "伺服器設定" },
 ];
 
 export function AppShell() {
@@ -20,7 +19,7 @@ export function AppShell() {
         <div className="shell">
             <header className="topbar">
                 <div className="topbar-inner">
-                    <NavLink to="/rag" className="brand">
+                    <NavLink to="/presets" className="brand">
                         <span className="brand-dot" />
                         <span className="brand-name">SciLLM Console</span>
                     </NavLink>

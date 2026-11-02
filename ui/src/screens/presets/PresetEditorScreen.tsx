@@ -19,6 +19,7 @@ import type {
     SubagentToolConfig,
     ToolChoice,
 } from "../../api/types";
+import { PresetRagIndexPanel } from "./PresetRagIndexPanel";
 import { MAX_STEPS_CAP } from "../../api/types";
 import { Checkbox } from "../../components/Checkbox";
 import { RadioList } from "../../components/Choices";
@@ -122,6 +123,7 @@ export function PresetEditorScreen() {
             {
                 onSuccess: (saved) => {
                     setLocalProblems(null);
+                    setDraft(null);
                     if (isNew || saved.name !== name) {
                         void navigate(
                             `/presets/${encodeURIComponent(saved.name)}`,
@@ -141,6 +143,11 @@ export function PresetEditorScreen() {
         ? !detail.builtin || detail.shadowed_builtin
         : false;
     const ragMode = ragSelection(preset);
+    const unsavedCorpus =
+        !base ||
+        preset.tools.rag.enable_tool !== base.tools.rag.enable_tool ||
+        JSON.stringify([...preset.tools.rag.corpus_datasets].sort()) !==
+            JSON.stringify([...base.tools.rag.corpus_datasets].sort());
     const subagents = preset.tools.subagents;
     const personas = configuredSubagentPersonas(subagents);
     const setPersonas = (next: SubagentPersona[]) =>
@@ -379,6 +386,13 @@ export function PresetEditorScreen() {
                                     回答。
                                 </p>
                             )}
+                        <PresetRagIndexPanel
+                            name={isNew ? undefined : name}
+                            unsavedCorpus={unsavedCorpus}
+                            savedRagEnabled={
+                                base?.tools.rag.enable_tool ?? false
+                            }
+                        />
                     </ToolPanel>
 
                     <ToolPanel

@@ -112,6 +112,13 @@ class RAGConfigUpdateResponse(BaseModel):
     )
 
 
+class RAGSettingsUpdateResponse(BaseModel):
+    """Global settings without selecting or describing any one preset."""
+
+    config: RAGConfigValues
+    build_started: bool
+
+
 ADMIN_RAG_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"description": "Enable RAG and select a corpus before rebuilding."},
     404: {"description": "The selected preset does not exist."},

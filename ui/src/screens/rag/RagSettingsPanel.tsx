@@ -1,22 +1,18 @@
-import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 
-import { ApiError } from "../../api/client";
 import { errorMessage } from "../../api/errors";
 import {
-    usePresets,
     useModels,
     usePrompts,
-    useRagConfig,
-    useRagMutations,
+    useRagSettings,
+    useRagSettingsMutations,
 } from "../../api/hooks";
-import type { NamedResource, RagBuildState } from "../../api/types";
+import type { NamedResource } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
+import { QueryError } from "../../components/ErrorPanel";
 import { Field, Panel } from "../../components/Panel";
-import { Loading, PageHeader } from "../../components/States";
+import { Loading } from "../../components/States";
 import { RebuildTag } from "../../components/StatusTag";
-import { formatDuration, formatTime } from "../../lib/format";
 import {
     buildUpdate,
     diffDraft,
@@ -24,19 +20,6 @@ import {
     type NumericKey,
     type RagDraft,
 } from "./draft";
-
-/** What a service that does not report `build` is treated as: nothing building,
- * nothing known about the last one. Only reachable when the console has been
- * deployed ahead of the service it talks to. */
-const UNKNOWN_BUILD: RagBuildState = {
-    status: "idle",
-    corpus_datasets: [],
-    started_at: null,
-    finished_at: null,
-    duration_seconds: null,
-    error: null,
-    cancel_requested: false,
-};
 
 /** The plain-language notes the mockup puts beside each retrieval knob. */
 const KNOBS: { key: NumericKey; label: string; note: string }[] = [
@@ -67,14 +50,11 @@ const KNOBS: { key: NumericKey; label: string; note: string }[] = [
     },
 ];
 
-export function RagScreen() {
-    const [selectedPreset, setSelectedPreset] = useState("");
-    const presets = usePresets();
-    const config = useRagConfig(selectedPreset);
+export function RagSettingsPanel() {
+    const config = useRagSettings();
     const models = useModels();
     const prompts = usePrompts();
-    const { apply, rebuild, cancelBuild, reset } =
-        useRagMutations(selectedPreset);
+    const { apply, reset } = useRagSettingsMutations();
 
     const [draft, setDraft] = useState<RagDraft | null>(null);
     const [confirmReset, setConfirmReset] = useState(false);
@@ -97,16 +77,7 @@ export function RagScreen() {
         [changes, draft]
     );
 
-    // A build runs on the service, not in this tab, so "busy" is whatever the
-    // service says plus whatever this tab has in flight. Editing during a build is
-    // pointless — the service answers 409 to a second one — so the form locks.
-    const build = config.data?.build ?? null;
-    const building = build?.status === "building";
-    const stopping = Boolean(
-        building && (build?.cancel_requested || cancelBuild.isPending)
-    );
-    const starting = apply.isPending || rebuild.isPending || reset.isPending;
-    const busy = starting || cancelBuild.isPending || building;
+    const busy = apply.isPending || reset.isPending;
     const rebuildCount = changes.filter((change) => change.rebuilds).length;
     const rebuildsOnApply = rebuildCount > 0;
 
@@ -130,153 +101,25 @@ export function RagScreen() {
     };
 
     if (config.isError) {
-        const notEnabled =
-            config.error instanceof ApiError && config.error.status === 503;
         return (
-            <>
-                <Header
-                    disabled
-                    building={false}
-                    stopping={false}
-                    onReset={() => undefined}
-                    onRebuild={() => undefined}
-                    onStop={() => undefined}
-                />
-                <div style={{ marginTop: 20 }}>
-                    {notEnabled ? (
-                        <ErrorPanel
-                            title="此服務未啟用檢索功能"
-                            detail={errorMessage(config.error)}
-                        >
-                            <p className="alarm-body" style={{ marginTop: 10 }}>
-                                請在預設值中選擇教材，再等待索引建置完成。
-                            </p>
-                        </ErrorPanel>
-                    ) : (
-                        <QueryError
-                            what="無法讀取檢索設定"
-                            error={config.error}
-                            actions={
-                                <button
-                                    type="button"
-                                    className="btn btn-primary"
-                                    onClick={() => void config.refetch()}
-                                >
-                                    再試一次
-                                </button>
-                            }
-                        />
-                    )}
-                </div>
-            </>
+            <QueryError what="無法讀取伺服器 RAG 設定" error={config.error} />
         );
     }
+    if (!config.data || !current) return <Loading what="伺服器 RAG 設定" />;
 
-    // No error and no snapshot yet: still on the way. Deliberately checked after
-    // `isError`, so a failure is never mistaken for a slow load.
-    if (!config.data || !current) {
-        return (
-            <>
-                <Header
-                    disabled
-                    building={false}
-                    stopping={false}
-                    onReset={() => undefined}
-                    onRebuild={() => undefined}
-                    onStop={() => undefined}
-                />
-                <Loading what="目前的檢索設定" />
-            </>
-        );
-    }
-
-    const live = config.data;
     const modelOptions = models.data?.models.map((model) => model.id) ?? [];
 
     return (
         <>
-            <Header
-                disabled={busy}
-                building={building}
-                stopping={stopping}
-                onReset={() => setConfirmReset(true)}
-                onRebuild={() => rebuild.mutate()}
-                onStop={() => cancelBuild.mutate()}
-            />
-
-            <StatusBanner
-                isBuilt={live.is_built}
-                datasetCount={live.corpus_datasets.length}
-                build={live.build ?? UNKNOWN_BUILD}
-                stopping={stopping}
-                pending={
-                    apply.isPending
-                        ? rebuildsOnApply
-                            ? "正在套用變更，接著重建索引"
-                            : "正在套用變更"
-                        : rebuild.isPending
-                          ? "正在開始重建索引"
-                          : reset.isPending
-                            ? "正在還原全域設定並檢查索引快取"
-                            : null
-                }
-                failure={
-                    (apply.error ??
-                    rebuild.error ??
-                    reset.error ??
-                    cancelBuild.error)
-                        ? errorMessage(
-                              apply.error ??
-                                  rebuild.error ??
-                                  reset.error ??
-                                  cancelBuild.error
-                          )
-                        : null
-                }
-                onRetry={() => rebuild.mutate()}
-            />
-
+            <Header disabled={busy} onReset={() => setConfirmReset(true)} />
+            {(apply.error || reset.error) && (
+                <QueryError
+                    what="無法套用伺服器 RAG 設定"
+                    error={apply.error ?? reset.error}
+                />
+            )}
             <div className="split split-wide" style={{ marginTop: 22 }}>
                 <div className="col">
-                    <Panel title="預設值的課程教材">
-                        <Field label="預設值">
-                            {(id) => (
-                                <select
-                                    id={id}
-                                    className="input"
-                                    value={selectedPreset || live.preset}
-                                    disabled={starting || cancelBuild.isPending}
-                                    onChange={(event) => {
-                                        setSelectedPreset(event.target.value);
-                                    }}
-                                >
-                                    {(presets.data ?? []).map((preset) => (
-                                        <option
-                                            key={preset.name}
-                                            value={preset.name}
-                                        >
-                                            {preset.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            )}
-                        </Field>
-                        <p className="note" style={{ marginTop: 12 }}>
-                            每個預設值各自選擇教材。下方設定由全伺服器共用；相同教材與建置設定會共用索引與建置工作。
-                        </p>
-                        <ul className="mono">
-                            {live.corpus_datasets.map((name) => (
-                                <li key={name}>{name}</li>
-                            ))}
-                        </ul>
-                        <Link
-                            to={`/presets/${encodeURIComponent(live.preset)}`}
-                            className="link-btn"
-                        >
-                            編輯此預設值的教材
-                        </Link>
-                    </Panel>
-
                     <Panel title="模型">
                         <div
                             style={{
@@ -524,7 +367,7 @@ export function RagScreen() {
                         {changes.length > 0 && (
                             <p className="note" style={{ maxWidth: "46ch" }}>
                                 {rebuildsOnApply
-                                    ? `${rebuildCount === 1 ? "有一項變更需要" : `有 ${rebuildCount} 項變更需要`}重建索引。重建會在背景進行，期間可隨時停止。`
+                                    ? `${rebuildCount === 1 ? "有一項變更需要" : `有 ${rebuildCount} 項變更需要`}重建索引。缺少的索引會在背景建立；請至各預設值頁面查看或停止建置。`
                                     : "目前的變更不需要重建索引。"}
                             </p>
                         )}
@@ -639,222 +482,35 @@ export function RagScreen() {
 
 function Header({
     disabled,
-    building,
-    stopping,
     onReset,
-    onRebuild,
-    onStop,
 }: {
     disabled: boolean;
-    building: boolean;
-    stopping: boolean;
     onReset: () => void;
-    onRebuild: () => void;
-    onStop: () => void;
 }) {
     return (
-        <PageHeader
-            kicker="即時服務"
-            title="檢索設定"
-            lede="全伺服器共用檢索與建置設定；教材由各預設值選擇。"
-            actions={
-                // While a build is running, stopping it is the only thing worth offering
-                // — and it takes the primary slot, because a rebuild of a real corpus
-                // runs for minutes and this is the way out of one started by mistake.
-                building ? (
-                    <button
-                        type="button"
-                        className="btn btn-primary"
-                        disabled={stopping}
-                        onClick={onStop}
-                    >
-                        {stopping ? "正在停止重建…" : "停止重建"}
-                    </button>
-                ) : (
-                    <>
-                        <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={disabled}
-                            onClick={onReset}
-                        >
-                            還原伺服器預設值
-                        </button>
-                        <button
-                            type="button"
-                            className="btn btn-secondary"
-                            disabled={disabled}
-                            onClick={onRebuild}
-                        >
-                            重建索引
-                        </button>
-                    </>
-                )
-            }
-        />
-    );
-}
-
-/** Honest states only. The service reports `is_built`, what the build is doing
- * and how long it has been at it — it does not report chunk counts or embedding
- * progress, so there is no percentage here, only elapsed time and a pulsing dot.
- * A running build belongs to the *service*, not to this tab: it survives a
- * reload, which is why the copy says so. */
-function StatusBanner({
-    isBuilt,
-    datasetCount,
-    build,
-    stopping,
-    pending,
-    failure,
-    onRetry,
-}: {
-    isBuilt: boolean;
-    datasetCount: number;
-    build: RagBuildState;
-    stopping: boolean;
-    pending: string | null;
-    failure: string | null;
-    onRetry: () => void;
-}) {
-    if (build.status === "building") {
-        return (
-            <div
-                className="banner banner-busy"
-                style={{ marginTop: 20 }}
-                aria-live="polite"
+        <div
+            style={{
+                display: "flex",
+                alignItems: "start",
+                justifyContent: "space-between",
+                gap: 18,
+                flexWrap: "wrap",
+            }}
+        >
+            <div>
+                <h3 style={{ margin: 0 }}>RAG 設定</h3>
+                <p className="note" style={{ marginTop: 8 }}>
+                    所有預設值共用這些檢索與建置設定。教材選擇與索引建置狀態請至各預設值頁面查看。
+                </p>
+            </div>
+            <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={disabled}
+                onClick={onReset}
             >
-                <span className="banner-led" />
-                <div className="banner-body">
-                    <div className="banner-title">
-                        {stopping
-                            ? "正在停止重建"
-                            : "正在建立此預設值的共用索引"}
-                        {isBuilt
-                            ? " — 先前的索引仍可使用"
-                            : " — 完成前無法提供此預設值的檢索回答"}
-                    </div>
-                    <div className="banner-line">
-                        {`已耗時 ${formatDuration(build.duration_seconds)}；重建通常會需要數分鐘，在此期間你可以離開這個頁面。`}
-                        {!stopping &&
-                            "停止重建會影響共用此索引的預設值；其他索引不受影響。"}
-                    </div>
-                </div>
-                <span className="tag tag-accent">建立中</span>
-            </div>
-        );
-    }
-
-    if (pending) {
-        return (
-            <div
-                className="banner banner-busy"
-                style={{ marginTop: 20 }}
-                aria-live="polite"
-            >
-                <span className="banner-led" />
-                <div className="banner-body">
-                    <div className="banner-title">{pending}</div>
-                    <div className="banner-line">
-                        重建會在服務端進行，這個請求只負責啟動它。
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (failure) {
-        return (
-            <div style={{ marginTop: 20 }}>
-                <ErrorPanel
-                    title="上次操作失敗"
-                    detail={failure}
-                    copyText={failure}
-                    actions={
-                        <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={onRetry}
-                        >
-                            再次重建
-                        </button>
-                    }
-                />
-            </div>
-        );
-    }
-
-    if (build.status === "failed") {
-        const detail = build.error ?? "服務未提供原因。";
-        return (
-            <div style={{ marginTop: 20 }}>
-                <ErrorPanel
-                    title={
-                        isBuilt
-                            ? "重建失敗，先前的索引仍可使用"
-                            : "索引建置失敗，尚無可用索引"
-                    }
-                    detail={detail}
-                    copyText={detail}
-                    actions={
-                        <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={onRetry}
-                        >
-                            再次重建
-                        </button>
-                    }
-                />
-            </div>
-        );
-    }
-
-    if (build.status === "cancelled") {
-        return (
-            <div className="banner banner-idle" style={{ marginTop: 20 }}>
-                <span className="banner-led" />
-                <div className="banner-body">
-                    <div className="banner-title">已停止上次的重建</div>
-                    <div className="banner-line">
-                        {isBuilt
-                            ? "老師仍可使用同一教材與建置設定的先前索引；全域設定保留不變。"
-                            : "目前沒有可用的索引。請確認下方設定後重新建立。"}
-                    </div>
-                </div>
-                <span className="tag tag-neutral">已停止</span>
-            </div>
-        );
-    }
-
-    if (!isBuilt) {
-        return (
-            <div className="banner banner-idle" style={{ marginTop: 20 }}>
-                <span className="banner-led" />
-                <div className="banner-body">
-                    <div className="banner-title">尚未建立索引</div>
-                    <div className="banner-line">
-                        請先在預設值中啟用 RAG 並選擇教材，然後按{" "}
-                        <strong>重建索引</strong>。
-                    </div>
-                </div>
-                <span className="tag tag-neutral">未建立</span>
-            </div>
-        );
-    }
-
-    return (
-        <div className="banner banner-good" style={{ marginTop: 20 }}>
-            <span className="banner-led" />
-            <div className="banner-body">
-                <div className="banner-title">索引已建立並可供回答</div>
-                <div className="banner-line mono">
-                    已建立 {datasetCount} 個語料庫資料集的索引
-                    {build.status === "completed" &&
-                        ` · 上次重建 ${formatTime(build.finished_at)} 完成，耗時 ${formatDuration(build.duration_seconds)}`}
-                </div>
-            </div>
-            <span className="tag tag-accent-2">正常</span>
+                還原伺服器預設值
+            </button>
         </div>
     );
 }

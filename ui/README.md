@@ -11,6 +11,11 @@ It implements `docs/admin-ui-spec.md` and follows the approved mockup in
 `ui-mockup/_ds/organic-.../styles.css`; `src/styles/app.css` layers this app's
 own overrides on top of it, starting with the mockup's `<style>` block).
 
+The navigation contains 行為預設, 評估, 測試區, and 伺服器設定. Corpus
+selection and index build controls belong to each preset page. Server settings
+contains the global RAG form and an available-resources tab. `/rag` and
+`/reference` redirect to server settings for existing bookmarks.
+
 ## Running it
 
 ```bash
