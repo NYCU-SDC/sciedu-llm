@@ -31,6 +31,7 @@ export function setRagSelection(
         tools: {
             ...preset.tools,
             rag: {
+                ...preset.tools.rag,
                 enable_tool: selection !== "disabled",
                 force: selection === "forced",
             },
@@ -54,7 +55,7 @@ export function blankPreset(): Preset {
         tool_choice: "auto",
         teacher_prompt_name: null,
         tools: {
-            rag: { enable_tool: false, force: false },
+            rag: { enable_tool: false, force: false, corpus_datasets: [] },
             subagents: {
                 enable_tool: false,
                 character_forcing: false,
@@ -130,6 +131,17 @@ export function checkPresetShape(value: unknown): ShapeProblem[] {
             bad("tools.rag.enable_tool", "must be true or false");
         if (typeof rag.force !== "boolean")
             bad("tools.rag.force", "must be true or false");
+        if (
+            rag.corpus_datasets !== undefined &&
+            (!Array.isArray(rag.corpus_datasets) ||
+                rag.corpus_datasets.some(
+                    (name: unknown) => typeof name !== "string" || !name.trim()
+                ))
+        )
+            bad(
+                "tools.rag.corpus_datasets",
+                "must be an array of non-empty dataset names"
+            );
         if (rag.force === true && rag.enable_tool !== true)
             bad("tools.rag.force", "requires enable_tool=true");
     }
@@ -289,6 +301,7 @@ function normaliseRag(value: Record<string, unknown>) {
     return {
         enable_tool: value.enable_tool === true,
         force: value.force === true,
+        corpus_datasets: stringList(value.corpus_datasets),
     };
 }
 
@@ -366,6 +379,7 @@ function normaliseLegacyTools(value: Record<string, unknown>): {
                     value.rag_mode === "forced" ||
                     allTools.includes("rag_search"),
                 force: value.rag_mode === "forced",
+                corpus_datasets: [],
             },
             subagents: {
                 enable_tool: subagentsEnabled,
@@ -411,6 +425,7 @@ export function labelForLoc(loc: (string | number)[]): string {
         teacher_prompt_name: "Teacher prompt",
         "tools.rag": "RAG",
         "tools.rag.enable_tool": "RAG — enabled",
+        "tools.rag.corpus_datasets": "RAG — corpus datasets",
         "tools.rag.force": "RAG — force",
         "tools.subagents": "Subagents",
         "tools.subagents.enable_tool": "Subagents — enabled",

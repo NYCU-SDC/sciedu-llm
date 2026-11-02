@@ -18,7 +18,7 @@ from app.dependencies import (
     get_langfuse_client,
     get_openai_client,
     get_preset_registry,
-    get_rag_pipeline,
+    get_rag_cache,
     get_settings,
 )
 from app.main import app
@@ -598,10 +598,12 @@ class _FailingRAGPipeline:
 @pytest.fixture
 def override_rag():
     def _install(pipeline):
-        app.dependency_overrides[get_rag_pipeline] = lambda: pipeline
+        app.dependency_overrides[get_rag_cache] = lambda: SimpleNamespace(
+            pipeline=lambda _preset: pipeline
+        )
 
     yield _install
-    app.dependency_overrides.pop(get_rag_pipeline, None)
+    app.dependency_overrides.pop(get_rag_cache, None)
 
 
 def test_chat_rag_disabled_by_default_leaves_messages_untouched(

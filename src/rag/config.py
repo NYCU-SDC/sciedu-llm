@@ -1,6 +1,6 @@
 from functools import cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -22,6 +22,12 @@ class RAGConfig(BaseSettings):
     rrf_k: int = Field(default=60, gt=0)
     rerank_pool_size: int = Field(default=30, gt=0)
     final_k: int = Field(default=5, gt=0)
+
+    @model_validator(mode="after")
+    def _valid_chunk_overlap(self) -> "RAGConfig":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size")
+        return self
 
     # `validate_assignment` so runtime overrides (admin API) are re-validated when
     # fields are set on an existing config instance, not just at construction.

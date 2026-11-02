@@ -37,7 +37,7 @@ from app.dependencies import (
     langfuse_dependency,
     openai_dependency,
     preset_registry_dependency,
-    rag_pipeline_dependency,
+    rag_cache_dependency,
     settings_dependency,
 )
 from app.presets import PresetNotFoundError
@@ -77,7 +77,7 @@ async def chat(
     openai: openai_dependency,
     langfuse: langfuse_dependency,
     settings: settings_dependency,
-    rag_pipeline: rag_pipeline_dependency,
+    rag_cache: rag_cache_dependency,
     registry: preset_registry_dependency,
 ):
     model = request.model or settings.openai_default_model
@@ -103,11 +103,6 @@ async def chat(
     # can read the whole history — but it is part of the published contract, so
     # a request that used to be rejected still is.
     if request.enable_rag:
-        if rag_pipeline is None:
-            raise HTTPException(
-                status_code=503,
-                detail="RAG is not enabled on this server. Configure RAG_CORPUS_DATASETS to enable it.",
-            )
         if latest_user_message(request.messages) is None:
             raise HTTPException(
                 status_code=422,
@@ -129,6 +124,13 @@ async def chat(
             status_code=503,
             detail=f"Chat preset '{preset_name}' is not available on this server.",
         ) from e
+
+    rag_pipeline = rag_cache.pipeline(preset)
+    if request.enable_rag and rag_pipeline is None:
+        raise HTTPException(
+            status_code=503,
+            detail="RAG is not enabled for this preset. Select corpus datasets in the preset and wait for its index build to complete.",
+        )
 
     try:
         prepared = prepare_preset_run(

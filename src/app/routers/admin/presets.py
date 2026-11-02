@@ -28,6 +28,7 @@ from langfuse.api.commons.errors.not_found_error import NotFoundError
 from app.dependencies import (
     langfuse_dependency,
     preset_registry_dependency,
+    rag_cache_dependency,
     settings_dependency,
 )
 from app.presets import (
@@ -180,6 +181,7 @@ async def get_preset(name: str, registry: preset_registry_dependency):
 async def upsert_preset(
     name: str,
     preset: Preset,
+    cache: rag_cache_dependency,
     registry: preset_registry_dependency,
     langfuse: langfuse_dependency,
     settings: settings_dependency,
@@ -211,7 +213,9 @@ async def upsert_preset(
         raise _bad_gateway(f"Failed to write preset '{name}'", e) from e
 
     await registry.refresh()
-    return _detail(name, _require(registry, name))
+    served = _require(registry, name)
+    cache.ensure(served)
+    return _detail(name, served)
 
 
 async def _ensure_dataset(langfuse: Langfuse, dataset_name: str) -> None:
@@ -287,5 +291,9 @@ async def delete_preset(
         "in service and `fetched_at` comes back null."
     ),
 )
-async def refresh_presets(registry: preset_registry_dependency):
-    return _report(await registry.refresh())
+async def refresh_presets(
+    registry: preset_registry_dependency, cache: rag_cache_dependency
+):
+    report = await registry.refresh()
+    cache.warm(registry.snapshot().values())
+    return _report(report)

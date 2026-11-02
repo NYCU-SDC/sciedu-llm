@@ -1,9 +1,10 @@
+import { Link } from "react-router-dom";
 import { useMemo, useState } from "react";
 
 import { ApiError } from "../../api/client";
 import { errorMessage } from "../../api/errors";
 import {
-    useDatasets,
+    usePresets,
     useModels,
     usePrompts,
     useRagConfig,
@@ -12,10 +13,6 @@ import {
 import type { NamedResource, RagBuildState } from "../../api/types";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
-import {
-    FolderDatasetPicker,
-    type DatasetItem,
-} from "../../components/FolderDatasetPicker";
 import { Field, Panel } from "../../components/Panel";
 import { Loading, PageHeader } from "../../components/States";
 import { RebuildTag } from "../../components/StatusTag";
@@ -71,11 +68,13 @@ const KNOBS: { key: NumericKey; label: string; note: string }[] = [
 ];
 
 export function RagScreen() {
-    const config = useRagConfig();
-    const datasets = useDatasets();
+    const [selectedPreset, setSelectedPreset] = useState("");
+    const presets = usePresets();
+    const config = useRagConfig(selectedPreset);
     const models = useModels();
     const prompts = usePrompts();
-    const { apply, rebuild, cancelBuild, reset } = useRagMutations();
+    const { apply, rebuild, cancelBuild, reset } =
+        useRagMutations(selectedPreset);
 
     const [draft, setDraft] = useState<RagDraft | null>(null);
     const [confirmReset, setConfirmReset] = useState(false);
@@ -150,11 +149,7 @@ export function RagScreen() {
                             detail={errorMessage(config.error)}
                         >
                             <p className="alarm-body" style={{ marginTop: 10 }}>
-                                請在服務環境中設定{" "}
-                                <span className="mono">
-                                    RAG_CORPUS_DATASETS
-                                </span>{" "}
-                                後重新啟動； 在此之前沒有可設定的項目。
+                                請在預設值中選擇教材，再等待索引建置完成。
                             </p>
                         </ErrorPanel>
                     ) : (
@@ -196,10 +191,6 @@ export function RagScreen() {
     }
 
     const live = config.data;
-    const corpusItems = buildCorpusItems(
-        datasets.data?.corpus ?? [],
-        live.corpus_datasets
-    );
     const modelOptions = models.data?.models.map((model) => model.id) ?? [];
 
     return (
@@ -226,7 +217,7 @@ export function RagScreen() {
                         : rebuild.isPending
                           ? "正在開始重建索引"
                           : reset.isPending
-                            ? "正在還原伺服器預設值，接著重建索引"
+                            ? "正在還原全域設定並檢查索引快取"
                             : null
                 }
                 failure={
@@ -247,75 +238,43 @@ export function RagScreen() {
 
             <div className="split split-wide" style={{ marginTop: 22 }}>
                 <div className="col">
-                    <Panel title="課程教材">
-                        <p className="note" style={{ marginBottom: 14 }}>
-                            老師可引用 <span className="mono">corpus/</span>{" "}
-                            下哪些 Langfuse 資料集。
-                        </p>
-                        {datasets.isError ? (
-                            <QueryError
-                                what="無法列出 Langfuse 資料集"
-                                error={datasets.error}
-                                actions={
-                                    <button
-                                        type="button"
-                                        className="btn btn-secondary"
-                                        onClick={() => void datasets.refetch()}
-                                    >
-                                        再試一次
-                                    </button>
-                                }
-                            />
-                        ) : !datasets.data ? (
-                            <Loading what="資料集清單" />
-                        ) : (
-                            <FolderDatasetPicker
-                                items={corpusItems}
-                                selected={current.corpus_datasets}
-                                disabled={busy}
-                                empty="Langfuse 的 corpus 資料夾目前沒有資料集。"
-                                onChange={(next) =>
-                                    set("corpus_datasets", next)
-                                }
-                            />
-                        )}
-                        {problemFor("corpus_datasets") && (
-                            <p
-                                className="note"
-                                style={{
-                                    marginTop: 10,
-                                    color: "var(--color-alarm-ink)",
-                                }}
-                            >
-                                {problemFor("corpus_datasets")}
-                            </p>
-                        )}
-                        <div
-                            style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 12,
-                                marginTop: 12,
-                                flexWrap: "wrap",
-                            }}
-                        >
-                            <RebuildTag />
-                            <span
-                                style={{
-                                    fontSize: 12,
-                                    color: "var(--color-neutral-600)",
-                                }}
-                            >
-                                讀取自 Langfuse ·{" "}
-                                <button
-                                    type="button"
-                                    className="link-btn"
-                                    onClick={() => void datasets.refetch()}
+                    <Panel title="預設值的課程教材">
+                        <Field label="預設值">
+                            {(id) => (
+                                <select
+                                    id={id}
+                                    className="input"
+                                    value={selectedPreset || live.preset}
+                                    disabled={starting || cancelBuild.isPending}
+                                    onChange={(event) => {
+                                        setSelectedPreset(event.target.value);
+                                    }}
                                 >
-                                    重新整理清單
-                                </button>
-                            </span>
-                        </div>
+                                    {(presets.data ?? []).map((preset) => (
+                                        <option
+                                            key={preset.name}
+                                            value={preset.name}
+                                        >
+                                            {preset.name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </Field>
+                        <p className="note" style={{ marginTop: 12 }}>
+                            每個預設值各自選擇教材。下方設定由全伺服器共用；相同教材與建置設定會共用索引與建置工作。
+                        </p>
+                        <ul className="mono">
+                            {live.corpus_datasets.map((name) => (
+                                <li key={name}>{name}</li>
+                            ))}
+                        </ul>
+                        <Link
+                            to={`/presets/${encodeURIComponent(live.preset)}`}
+                            className="link-btn"
+                        >
+                            編輯此預設值的教材
+                        </Link>
                     </Panel>
 
                     <Panel title="模型">
@@ -660,10 +619,10 @@ export function RagScreen() {
                         <>
                             此程序持有的所有覆寫設定都會移除，並還原服務
                             <span className="mono">RAG_*</span>{" "}
-                            環境變數的值。之後會立即開始重建索引，重建在背景進行，期間可隨時停止。
+                            環境變數的值。符合設定的索引快取會直接使用，其餘預設值會在背景建置索引。
                         </>
                     }
-                    confirmLabel="還原並重建"
+                    confirmLabel="還原設定"
                     busy={reset.isPending}
                     onCancel={() => setConfirmReset(false)}
                     onConfirm={() => {
@@ -697,7 +656,7 @@ function Header({
         <PageHeader
             kicker="即時服務"
             title="檢索設定"
-            lede="老師回答前如何在課程教材中查找資訊。以下每項設定目前都正在使用。"
+            lede="全伺服器共用檢索與建置設定；教材由各預設值選擇。"
             actions={
                 // While a build is running, stopping it is the only thing worth offering
                 // — and it takes the primary slot, because a rebuild of a real corpus
@@ -768,13 +727,17 @@ function StatusBanner({
                 <span className="banner-led" />
                 <div className="banner-body">
                     <div className="banner-title">
-                        {stopping ? "正在停止重建" : "正在重建索引"} —
-                        在此期間老師會持續使用先前的索引
+                        {stopping
+                            ? "正在停止重建"
+                            : "正在建立此預設值的共用索引"}
+                        {isBuilt
+                            ? " — 先前的索引仍可使用"
+                            : " — 完成前無法提供此預設值的檢索回答"}
                     </div>
                     <div className="banner-line">
                         {`已耗時 ${formatDuration(build.duration_seconds)}；重建通常會需要數分鐘，在此期間你可以離開這個頁面。`}
                         {!stopping &&
-                            "若要中止，請按上方的「停止重建」；先前的索引會完整保留。"}
+                            "停止重建會影響共用此索引的預設值；其他索引不受影響。"}
                     </div>
                 </div>
                 <span className="tag tag-accent">建立中</span>
@@ -791,9 +754,7 @@ function StatusBanner({
             >
                 <span className="banner-led" />
                 <div className="banner-body">
-                    <div className="banner-title">
-                        {pending} — 在此期間老師會持續使用先前的索引
-                    </div>
+                    <div className="banner-title">{pending}</div>
                     <div className="banner-line">
                         重建會在服務端進行，這個請求只負責啟動它。
                     </div>
@@ -806,7 +767,7 @@ function StatusBanner({
         return (
             <div style={{ marginTop: 20 }}>
                 <ErrorPanel
-                    title="上次嘗試失敗，但仍在使用先前的索引"
+                    title="上次操作失敗"
                     detail={failure}
                     copyText={failure}
                     actions={
@@ -828,7 +789,11 @@ function StatusBanner({
         return (
             <div style={{ marginTop: 20 }}>
                 <ErrorPanel
-                    title="上次重建失敗，但仍在使用先前的索引"
+                    title={
+                        isBuilt
+                            ? "重建失敗，先前的索引仍可使用"
+                            : "索引建置失敗，尚無可用索引"
+                    }
                     detail={detail}
                     copyText={detail}
                     actions={
@@ -853,7 +818,7 @@ function StatusBanner({
                     <div className="banner-title">已停止上次的重建</div>
                     <div className="banner-line">
                         {isBuilt
-                            ? "沒有任何變更寫入索引；老師仍在使用先前的索引，下方顯示的也已還原為該索引實際使用的設定。"
+                            ? "老師仍可使用同一教材與建置設定的先前索引；全域設定保留不變。"
                             : "目前沒有可用的索引。請確認下方設定後重新建立。"}
                     </div>
                 </div>
@@ -869,7 +834,7 @@ function StatusBanner({
                 <div className="banner-body">
                     <div className="banner-title">尚未建立索引</div>
                     <div className="banner-line">
-                        語料庫建立索引前無法進行檢索回答。確認下方設定無誤後，請按{" "}
+                        請先在預設值中啟用 RAG 並選擇教材，然後按{" "}
                         <strong>重建索引</strong>。
                     </div>
                 </div>
@@ -892,24 +857,6 @@ function StatusBanner({
             <span className="tag tag-accent-2">正常</span>
         </div>
     );
-}
-
-/** Corpus datasets Langfuse advertises, plus anything the pipeline is already
- * built from that has since left the listing — dropping it silently would hide
- * part of the live configuration. */
-function buildCorpusItems(
-    available: NamedResource[],
-    active: string[]
-): DatasetItem[] {
-    const listed = new Map(available.map((entry) => [entry.name, entry.label]));
-    const extras = active.filter((name) => !listed.has(name));
-    return [
-        ...available.map((entry) => ({ name: entry.name, label: entry.label })),
-        ...extras.map((name) => ({
-            name,
-            note: "正在使用，但 Langfuse 已不再於 corpus 資料夾下列出此項目。",
-        })),
-    ];
 }
 
 function ModelPicker({

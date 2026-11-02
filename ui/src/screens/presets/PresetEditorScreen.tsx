@@ -5,6 +5,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { ApiError } from "../../api/client";
 import { errorMessage, locPath } from "../../api/errors";
 import {
+    useDatasets,
     useModels,
     usePreset,
     usePresetMutations,
@@ -23,6 +24,7 @@ import { Checkbox } from "../../components/Checkbox";
 import { RadioList } from "../../components/Choices";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { ErrorPanel, QueryError } from "../../components/ErrorPanel";
+import { FolderDatasetPicker } from "../../components/FolderDatasetPicker";
 import { Field, Panel } from "../../components/Panel";
 import { Loading, PageHeader } from "../../components/States";
 import {
@@ -56,6 +58,7 @@ export function PresetEditorScreen() {
     const navigate = useNavigate();
     const loaded = usePreset(name);
     const models = useModels();
+    const datasets = useDatasets();
     const prompts = usePrompts();
     const { save, remove } = usePresetMutations();
     const [localProblems, setLocalProblems] = useState<ShapeProblem[] | null>(
@@ -322,6 +325,60 @@ export function PresetEditorScreen() {
                                 setDraft(setRagSelection(preset, selection))
                             }
                         />
+                        <Field
+                            label="課程教材"
+                            hint="只搜尋此預設值選擇的資料集。相同教材與建置設定會共用伺服器索引。"
+                        >
+                            {() =>
+                                datasets.isError ? (
+                                    <QueryError
+                                        what="無法列出教材"
+                                        error={datasets.error}
+                                    />
+                                ) : !datasets.data ? (
+                                    <Loading what="教材" />
+                                ) : (
+                                    <FolderDatasetPicker
+                                        items={[
+                                            ...datasets.data.corpus,
+                                            ...preset.tools.rag.corpus_datasets
+                                                .filter(
+                                                    (name) =>
+                                                        !datasets.data.corpus.some(
+                                                            (item) =>
+                                                                item.name ===
+                                                                name
+                                                        )
+                                                )
+                                                .map((name) => ({ name })),
+                                        ]}
+                                        selected={
+                                            preset.tools.rag.corpus_datasets
+                                        }
+                                        empty="Langfuse 的 corpus 資料夾目前沒有資料集。"
+                                        onChange={(corpus_datasets) =>
+                                            editPreset((previous) => ({
+                                                ...previous,
+                                                tools: {
+                                                    ...previous.tools,
+                                                    rag: {
+                                                        ...previous.tools.rag,
+                                                        corpus_datasets,
+                                                    },
+                                                },
+                                            }))
+                                        }
+                                    />
+                                )
+                            }
+                        </Field>
+                        {preset.tools.rag.enable_tool &&
+                            preset.tools.rag.corpus_datasets.length === 0 && (
+                                <p className="note">
+                                    請選擇教材；沒有教材的預設值無法提供 RAG
+                                    回答。
+                                </p>
+                            )}
                     </ToolPanel>
 
                     <ToolPanel

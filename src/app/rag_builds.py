@@ -13,7 +13,7 @@ routes then answer immediately and the console polls `GET /admin/rag/config`.
 
 Cancelling is safe because `RAGPipeline.build` only swaps its indexes in on the
 last line: a cancelled or failed build leaves the previous indexes serving
-queries, exactly as they were.
+queries, exactly as they were. Build settings stay fixed for this cache entry.
 
 Strong reference invariant: `self._task` is what keeps the running build alive
 for the GC — do not "clean up" the apparently-unused field.
@@ -36,8 +36,7 @@ logger = logging.getLogger(__name__)
 
 
 class BuildStatus(StrEnum):
-    #: Nothing has been built through this manager (the initial build does not
-    #: go through it) — the pipeline may still be serving indexes.
+    #: No build has been scheduled for this cache entry.
     IDLE = "idle"
     BUILDING = "building"
     COMPLETED = "completed"
@@ -85,12 +84,7 @@ class RagBuildManager:
     def __init__(self, pipeline: RAGPipeline) -> None:
         self._pipeline = pipeline
         self._state = BuildState()
-        self._task: asyncio.Task | None = None
-        # The build-time settings the *installed* indexes were built with: seeded
-        # from the pipeline as handed over (the initial build), re-read after every
-        # build that lands, and put back when one is abandoned. See
-        # `_restore_build_time_config`.
-        self._committed = self._build_time_config()
+        self._task: asyncio.Task[None] | None = None
 
     @property
     def pipeline(self) -> RAGPipeline:
@@ -129,6 +123,7 @@ class RagBuildManager:
             started_at=datetime.now(UTC),
         )
         self._task = asyncio.create_task(self._run(names), name="rag-build")
+        self._task.add_done_callback(self._on_done)
         logger.info(
             "RAG index build requested | corpus=%s chunk_size=%s chunk_overlap=%s "
             "embedding_model=%s",
@@ -158,12 +153,21 @@ class RagBuildManager:
     def shutdown(self) -> None:
         """Cancel a running build. Called from the app lifespan teardown.
 
-        Synchronous and fire-and-forget: the loop is going away with the process,
-        so there is nothing useful to await.
+        Call wait() afterwards to drain the cancelled task.
         """
         if self._task is not None and not self._task.done():
             self._task.cancel()
             logger.info("RAG index build cancelled by shutdown")
+
+    def _on_done(self, task: asyncio.Task[None]) -> None:
+        # Cancellation can happen before _run's first instruction executes.
+        if task is self._task and task.cancelled() and self._state.is_building:
+            self._settle(BuildStatus.CANCELLED)
+
+    async def wait(self) -> None:
+        """Drain the current job, including cancellation during shutdown."""
+        if self._task is not None:
+            await asyncio.gather(self._task, return_exceptions=True)
 
     async def _run(self, names: list[str]) -> None:
         try:
@@ -183,64 +187,10 @@ class RagBuildManager:
             )
 
     def _settle(self, status: BuildStatus, *, error: str | None = None) -> None:
-        if status is BuildStatus.COMPLETED:
-            # These are what the indexes now hold, so they are what a later
-            # abandoned build has to be rolled back to.
-            self._committed = self._build_time_config()
-        else:
-            self._restore_build_time_config()
         self._state = replace(
             self._state,
             status=status,
             finished_at=datetime.now(UTC),
             error=error,
             cancel_requested=False,
-        )
-
-    def _build_time_config(self) -> dict[str, object]:
-        """The pipeline's current values for the fields a build bakes in."""
-        snapshot = self._pipeline.config_snapshot()
-        return {
-            field: snapshot[field]
-            for field in RAGPipeline.BUILD_TIME_FIELDS
-            if field in snapshot
-        }
-
-    def _restore_build_time_config(self) -> None:
-        """Put back the build-time settings an abandoned build was going to bake.
-
-        The admin API applies a config change to the pipeline *before* the rebuild
-        that makes it real — retrieval knobs have to take effect at once, and the
-        build needs the new values to build with. So a cancelled or failed build
-        leaves the pipeline describing an index that was never created:
-        `GET /admin/rag/config` would report a chunk size the serving index does
-        not have, and the console would show settings for a build the operator
-        just killed. Reverting keeps that endpoint's promise — what it reports is
-        what is answering queries.
-
-        The corpus list needs no undoing (`RAGPipeline.build` adopts it only on
-        success) and the retrieval knobs are deliberately left alone: they applied
-        the moment they were set and are baked into nothing.
-
-        One consequence worth knowing: a build-time change applied with
-        ``rebuild=false`` — deliberately staged for the next build — is also
-        rolled back if that build is then abandoned, because the only value this
-        can restore is the one the installed indexes have. The console never gets
-        there (it sends ``rebuild=true`` exactly when a build-time field changed),
-        but a hand-written PATCH can.
-        """
-        if not self._committed:
-            return
-        current = self._pipeline.config_snapshot()
-        drifted = {
-            field: value
-            for field, value in self._committed.items()
-            if current.get(field) != value
-        }
-        if not drifted:
-            return
-        self._pipeline.apply_overrides(drifted)
-        logger.info(
-            "Reverted build-time settings the abandoned build had applied: %s",
-            ", ".join(f"{field}={value!r}" for field, value in sorted(drifted.items())),
         )

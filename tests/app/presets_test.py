@@ -872,15 +872,11 @@ async def test_startup_survives_a_failed_seed(monkeypatch, caplog):
     async def _explode(*_args, **_kwargs):
         raise RuntimeError("langfuse is down")
 
-    async def _no_rag():
-        return None
-
     async def _allowed():
         return ["gpt-oss-120b"]
 
     monkeypatch.setattr(main, "ensure_default_presets", _explode)
     monkeypatch.setattr(main, "validate_allowed_models", _allowed)
-    monkeypatch.setattr(main, "build_rag_pipeline", _no_rag)
     monkeypatch.setattr(main, "get_langfuse_client", _FakeLangfuse)
 
     async def _openai():

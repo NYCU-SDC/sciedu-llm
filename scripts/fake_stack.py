@@ -35,10 +35,12 @@ from app.dependencies import (  # noqa: E402
     Settings,
     get_langfuse_client,
     get_openai_client,
-    get_rag_pipeline,
+    get_rag_cache,
     get_settings,
 )
 from app.main import app  # noqa: E402
+from app.presets import DEFAULT_PRESETS, Preset  # noqa: E402
+from app.rag_cache import RagBuildCache  # noqa: E402
 from rag.config import get_rag_config  # noqa: E402
 
 
@@ -200,12 +202,25 @@ class FakeLangfuse:
             "rag-generator-user",
         ]
         self.api = SimpleNamespace(
+            datasets=SimpleNamespace(
+                list=lambda **_kwargs: SimpleNamespace(
+                    data=[
+                        SimpleNamespace(name=name)
+                        for name in (
+                            "corpus/ver3/biology",
+                            "corpus/ver3/chemistry",
+                            "questions/biology",
+                        )
+                    ],
+                    meta=SimpleNamespace(total_pages=1),
+                )
+            ),
             prompts=SimpleNamespace(
                 list=lambda **_kwargs: SimpleNamespace(
                     data=[SimpleNamespace(name=name) for name in prompt_names],
                     meta=SimpleNamespace(total_pages=1),
                 )
-            )
+            ),
         )
 
     @contextlib.contextmanager
@@ -219,13 +234,15 @@ class FakeLangfuse:
         return FakePrompt()
 
     def get_dataset(self, _name):
+        documents = [p.model_dump() for p in DEFAULT_PRESETS.values()]
+        documents.append(Preset.model_validate(TEACHER_STUDENT_PRESET).model_dump())
+        for document in documents:
+            if document["tools"]["rag"]["enable_tool"]:
+                document["tools"]["rag"]["corpus_datasets"] = ["corpus/ver3/biology"]
         return SimpleNamespace(
             items=[
-                SimpleNamespace(
-                    id="teacher-student",
-                    input=TEACHER_STUDENT_PRESET,
-                    metadata=None,
-                )
+                SimpleNamespace(id=document["name"], input=document, metadata=None)
+                for document in documents
             ]
         )
 
@@ -243,8 +260,8 @@ class FakeRAG:
     BUILD_SECONDS = 45.0
     BUILD_STEP_SECONDS = 0.25
 
-    def __init__(self):
-        self._values = get_rag_config().model_dump()
+    def __init__(self, config=None):
+        self._values = (config or get_rag_config()).model_dump()
         self.is_built = True
         self.corpus_dataset_names = ["corpus/ver3/biology"]
 
@@ -303,11 +320,10 @@ def build_fake_app():
     fake_openai = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
     app.dependency_overrides[get_openai_client] = lambda: fake_openai
     app.dependency_overrides[get_langfuse_client] = FakeLangfuse
-    # One pipeline for the whole process, not one per request: the retrieval
-    # admin screen tunes it and follows a rebuild across several calls, and a
-    # fresh instance each time would forget both.
-    fake_rag = FakeRAG()
-    app.dependency_overrides[get_rag_pipeline] = lambda: fake_rag
+    # Use the real shared cache with prebuilt fake indexes. Manual rebuilds
+    # still take time so the console's cancellation controls can be exercised.
+    cache = RagBuildCache(FakeRAG)
+    app.dependency_overrides[get_rag_cache] = lambda: cache
 
     # The lifespan validates models and builds a corpus; neither applies here.
     # The preset registry is built lazily on the first request instead, off the

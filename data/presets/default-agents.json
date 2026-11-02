@@ -8,7 +8,8 @@
   "tools": {
     "rag": {
       "enable_tool": true,
-      "force": false
+      "force": false,
+      "corpus_datasets": []
     },
     "subagents": {
       "enable_tool": true,
