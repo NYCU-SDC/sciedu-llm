@@ -147,7 +147,7 @@ AGENTS_RESPONSES: dict[int | str, dict[str, Any]] = {
         "content": {
             "application/json": {
                 "example": {
-                    "detail": "Tool 'rag_search' requires RAG, which is not enabled on this server. Configure RAG_CORPUS_DATASETS to enable it."
+                    "detail": "Tool 'rag_search' requires RAG, which is not enabled on this server. Select corpus datasets in the preset and wait for its index build to complete."
                 }
             }
         },

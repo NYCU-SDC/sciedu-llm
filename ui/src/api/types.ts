@@ -32,9 +32,7 @@ export interface RagConfigValues {
     final_k: number;
 }
 
-/** RAGBuildState.status — `idle` means nothing has been built through the admin
- * API this process, which says nothing about whether an index exists (the server
- * builds one at startup). */
+/** Status of a cached build shared by matching presets. */
 export type RagBuildStatus =
     "idle" | "building" | "completed" | "failed" | "cancelled";
 
@@ -57,6 +55,7 @@ export interface RagBuildState {
  * build state known" rather than crash. Against a current service it is always
  * there. */
 export interface RagConfigResponse extends RagConfigValues {
+    preset: string;
     is_built: boolean;
     corpus_datasets: string[];
     build?: RagBuildState;
@@ -65,7 +64,6 @@ export interface RagConfigResponse extends RagConfigValues {
 /** RAGConfigUpdate — a partial override. `rebuild` defaults to true server-side. */
 export interface RagConfigUpdate extends Partial<RagConfigValues> {
     rebuild?: boolean;
-    corpus_datasets?: string[];
 }
 
 /** RAGConfigUpdateResponse. `build_started` means a rebuild was *scheduled* —
@@ -76,10 +74,10 @@ export interface RagConfigUpdateResponse {
 }
 
 /** Keys of the config whose value only takes effect once the index is rebuilt.
- * Mirrors the router: `corpus_datasets` always forces a rebuild, and chunking /
+ * Mirrors the cache key: chunking, embedding batch size and
  * the embedding model are baked into the stored vectors. */
 export const REBUILD_KEYS = [
-    "corpus_datasets",
+    "embedding_batch_size",
     "embedding_model",
     "chunk_size",
     "chunk_overlap",
@@ -96,6 +94,7 @@ export const MAX_STEPS_CAP = 16;
 export type ToolChoice = "auto" | "none" | "required";
 
 export interface RagToolConfig {
+    corpus_datasets: string[];
     enable_tool: boolean;
     force: boolean;
 }

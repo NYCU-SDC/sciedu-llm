@@ -34,6 +34,20 @@ pnpm preview        # serve dist/ (no proxy — set VITE_API_BASE_URL for this)
 pnpm lint           # oxlint
 ```
 
+## Seeded local preview
+
+For a seeded local preview with no external services, run
+`.venv/bin/python scripts/dev_preview.py` from the repository root, then
+`VITE_DEV_API_TARGET=http://127.0.0.1:8000 pnpm --dir ui dev --host 127.0.0.1`
+in a second terminal. Open `http://127.0.0.1:5173`.
+
+The preview seeds biology and chemistry corpora plus editable presets. Biology
+presets share an index; `chemistry` uses a separate index. It runs real corpus
+chunking, indexes, and cache controls with synthetic embeddings, reranking, and
+model replies. Rebuilds pause for four seconds to make cancellation testable.
+Edits last until the API process restarts. Evaluation runs require real services
+and are disabled in this preview.
+
 ## Environment variables
 
 Both are read at **build time** (Vite inlines them), so a production build needs

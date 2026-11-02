@@ -103,14 +103,14 @@ def prepare_preset_run(
             raise PresetRunError(
                 503,
                 f"Preset '{preset.name}' requires RAG, which is not enabled on "
-                "this server. Configure RAG_CORPUS_DATASETS to enable it.",
+                "this server. Select corpus datasets in the preset and wait for its index build to complete.",
             )
         for tool in tools:
             if tool.requires_rag:
                 raise PresetRunError(
                     503,
                     f"Tool '{tool.name}' requires RAG, which is not enabled on "
-                    "this server. Configure RAG_CORPUS_DATASETS to enable it.",
+                    "this server. Select corpus datasets in the preset and wait for its index build to complete.",
                 )
 
     system_message: dict[str, Any] | None = None

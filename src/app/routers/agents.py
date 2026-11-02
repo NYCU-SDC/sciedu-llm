@@ -13,7 +13,7 @@ from app.dependencies import (
     langfuse_dependency,
     openai_dependency,
     preset_registry_dependency,
-    rag_pipeline_dependency,
+    rag_cache_dependency,
     settings_dependency,
 )
 from app.presets import PresetNotFoundError
@@ -51,7 +51,7 @@ async def agents(
     openai: openai_dependency,
     langfuse: langfuse_dependency,
     settings: settings_dependency,
-    rag_pipeline: rag_pipeline_dependency,
+    rag_cache: rag_cache_dependency,
     registry: preset_registry_dependency,
 ):
     name = request.preset or settings.agents_default_preset
@@ -68,6 +68,8 @@ async def agents(
 
     # Unlike /chat — where RAG failures can only surface mid-stream — everything
     # cheap is checked before the first byte, so these stay real HTTP statuses.
+    rag_pipeline = rag_cache.pipeline(preset)
+
     try:
         prepared = prepare_preset_run(
             preset=preset,

@@ -23,21 +23,10 @@ class RAGConfigValues(BaseModel):
 
 
 class RAGBuildState(BaseModel):
-    """What the background index build is doing (or last did).
-
-    Rebuilds do not happen inside the request that asks for one — they are
-    scheduled and this is how a client follows them: poll `GET /admin/rag/config`
-    while `status` is `building`. Deliberately job-level: no percentage, because
-    what a client can act on is "still going / finished / failed", and
-    `duration_seconds` says how long it has been going. Batch-by-batch progress
-    is logged by the service instead (`rag.pipeline`, at INFO).
-    """
+    """Status of the cached build shared by matching presets."""
 
     status: Literal["idle", "building", "completed", "failed", "cancelled"] = Field(
-        description=(
-            "`idle` means no build has been started through the admin API this "
-            "process — the indexes may still be built, from startup."
-        )
+        description="idle means no build has been scheduled for this cache entry."
     )
     corpus_datasets: list[str] = Field(
         description="Corpus datasets this build is (or was) indexing."
@@ -63,25 +52,23 @@ class RAGBuildState(BaseModel):
 class RAGConfigResponse(RAGConfigValues):
     """Current effective config plus pipeline status."""
 
+    preset: str = Field(
+        description="Preset whose corpus and index status are reported."
+    )
     is_built: bool = Field(
         description="Whether the BM25 + dense indexes are currently built."
     )
     corpus_datasets: list[str] = Field(
-        description="Langfuse corpus dataset names the current indexes were built from."
+        description="Corpus dataset names configured in the selected preset."
     )
     build: RAGBuildState = Field(description="The state of the background index build.")
 
 
 class RAGConfigUpdate(BaseModel):
-    """Partial override of the RAG config. Only the provided fields are changed.
+    """Partial override of server-wide RAG settings.
 
-    The indexes are rebuilt after applying the changes by default; set
-    ``rebuild=false`` to apply without rebuilding (build-time changes then take
-    effect only on the next rebuild).
-
-    Build-time changes are applied to the pipeline before the rebuild that makes
-    them real, and are rolled back if that rebuild is cancelled or fails — so a
-    later ``GET /config`` describes the indexes that are actually serving.
+    Changed build settings select new cache entries; failed or cancelled builds
+    never change settings or indexes stored under another cache key.
     """
 
     rebuild: bool = Field(
@@ -90,15 +77,6 @@ class RAGConfigUpdate(BaseModel):
             "Whether to rebuild the indexes after applying the changes. Defaults "
             "to true. Set false to skip the rebuild. The rebuild runs in the "
             "background — this request returns as soon as it is scheduled."
-        ),
-    )
-
-    corpus_datasets: Optional[list[str]] = Field(
-        default=None,
-        description=(
-            "Override which Langfuse corpus datasets the indexes are built from. "
-            "When provided (non-empty), the indexes are always rebuilt from the new "
-            "corpus regardless of the `rebuild` flag, so the change takes effect."
         ),
     )
 
@@ -117,7 +95,8 @@ class RAGConfigUpdate(BaseModel):
     final_k: Optional[int] = Field(default=None, gt=0)
 
     model_config = {
-        "json_schema_extra": {"example": {"final_k": 8, "rerank_pool_size": 40}}
+        "extra": "forbid",
+        "json_schema_extra": {"example": {"final_k": 8, "rerank_pool_size": 40}},
     }
 
 
@@ -127,34 +106,16 @@ class RAGConfigUpdateResponse(BaseModel):
     config: RAGConfigResponse
     build_started: bool = Field(
         description=(
-            "True when the change required an index rebuild and one was "
-            "scheduled. Follow it via `config.build`."
+            "True when at least one missing preset index build was scheduled. "
+            "config.build describes only the selected preset."
         )
     )
 
 
 ADMIN_RAG_RESPONSES: dict[int | str, dict[str, Any]] = {
+    400: {"description": "Enable RAG and select a corpus before rebuilding."},
+    404: {"description": "The selected preset does not exist."},
     409: {
-        "description": (
-            "Conflict - a build is already running, or a cancel was asked for "
-            "with nothing running"
-        ),
-        "content": {
-            "application/json": {
-                "example": {
-                    "detail": "An index build is already running. Cancel it before starting another."
-                }
-            }
-        },
-    },
-    503: {
-        "description": "Service Unavailable - RAG is not enabled on this server",
-        "content": {
-            "application/json": {
-                "example": {
-                    "detail": "RAG is not enabled on this server. Configure RAG_CORPUS_DATASETS to enable it."
-                }
-            }
-        },
+        "description": "The shared entry is already building, or no build can be cancelled."
     },
 }

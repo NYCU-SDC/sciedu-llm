@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { enabledToolCount, normalisePreset } from "./presetShape.ts";
+import {
+    enabledToolCount,
+    normalisePreset,
+    setRagSelection,
+} from "./presetShape.ts";
 
 test("normalises a legacy preset before the UI reads tool sections", () => {
     const preset = normalisePreset({
@@ -32,6 +36,7 @@ test("normalises a legacy preset before the UI reads tool sections", () => {
     assert.deepEqual(preset.tools.rag, {
         enable_tool: true,
         force: false,
+        corpus_datasets: [],
     });
     assert.deepEqual(preset.tools.subagents, {
         enable_tool: true,
@@ -51,6 +56,7 @@ test("fills absent tool sections instead of throwing", () => {
     assert.deepEqual(preset.tools.rag, {
         enable_tool: false,
         force: false,
+        corpus_datasets: [],
     });
     assert.deepEqual(preset.tools.subagents, {
         enable_tool: false,
@@ -59,4 +65,26 @@ test("fills absent tool sections instead of throwing", () => {
         max_steps: 3,
         personas: [],
     });
+});
+
+test("preserves preset corpus selection while changing retrieval mode", () => {
+    const preset = normalisePreset({
+        name: "biology",
+        tools: {
+            rag: {
+                enable_tool: true,
+                force: false,
+                corpus_datasets: ["corpus/biology"],
+            },
+        },
+    });
+    for (const mode of ["disabled", "enabled", "forced"]) {
+        assert.deepEqual(
+            setRagSelection(preset, mode).tools.rag.corpus_datasets,
+            ["corpus/biology"]
+        );
+    }
+    assert.deepEqual(normalisePreset(preset).tools.rag.corpus_datasets, [
+        "corpus/biology",
+    ]);
 });

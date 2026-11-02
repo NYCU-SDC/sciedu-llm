@@ -36,9 +36,8 @@ class RAGPipeline:
 
     #: Config fields that are baked into the indexes at :meth:`build` time, as
     #: opposed to the retrieval knobs, which are read fresh on every query.
-    #: Changing one of these means nothing until the next build — and if that
-    #: build never lands, the value describes an index that does not exist, which
-    #: is why `app.rag_builds` puts these back when a build is abandoned.
+    #: The server cache includes these in its key, so indexes built with different
+    #: values live in separate pipelines.
     BUILD_TIME_FIELDS = (
         "embedding_model",
         "embedding_batch_size",
@@ -57,7 +56,7 @@ class RAGPipeline:
         generator_user_prompt_name: str | None = None,
         config: RAGConfig | None = None,
     ) -> None:
-        self._config = config or get_rag_config()
+        self._config = (config or get_rag_config()).model_copy(deep=True)
         self._openai = openai
         self._langfuse = langfuse
         self._embedding_model = embedding_model or self._config.embedding_model
@@ -170,9 +169,11 @@ class RAGPipeline:
         )
 
         logger.info("Indexing %d embedded chunk(s)", len(chunker.chunks))
+        dense = DenseIndex(embeddings)
+        bm25 = BM25Index([chunk.text for chunk in chunker.chunks])
         self._chunker = chunker
-        self._dense = DenseIndex(embeddings)
-        self._bm25 = BM25Index([chunk.text for chunk in chunker.chunks])
+        self._dense = dense
+        self._bm25 = bm25
         self._corpus_dataset_names = list(corpus_dataset_names)
         logger.info(
             "Index build finished | %d chunk(s), %d chapter(s) from %d dataset(s) in %s",
@@ -224,14 +225,13 @@ class RAGPipeline:
     def apply_overrides(self, overrides: dict[str, Any]) -> None:
         """Apply runtime config overrides in place.
 
-        Sets each field on the underlying ``RAGConfig`` (re-validated via
-        ``validate_assignment``) and re-syncs the derived state that ``__init__``
+        Validates the complete candidate configuration atomically and re-syncs
+        the derived state that ``__init__``
         caches (the ``Reranker``, embedding/model/prompt attributes). Build-time
         changes (chunk sizes, embedding model/batch) take effect on the next
         :meth:`build`.
         """
-        for key, value in overrides.items():
-            setattr(self._config, key, value)
+        self._config = RAGConfig.model_validate(self._config.model_dump() | overrides)
 
         if "embedding_model" in overrides:
             self._embedding_model = overrides["embedding_model"]

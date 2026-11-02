@@ -480,3 +480,47 @@ def test_the_registry_is_built_on_demand_when_the_lifespan_left_none(build_clien
 
     assert response.status_code == 200
     assert [entry["name"] for entry in response.json()] == sorted(DEFAULT_PRESETS)
+
+
+@pytest.mark.asyncio
+async def test_saving_presets_persists_their_corpus_and_shares_only_matching_builds(
+    build_client,
+):
+    from httpx import ASGITransport, AsyncClient
+    from app.dependencies import get_rag_cache
+    from app.rag_cache import RagBuildCache
+    from tests.app.rag_cache_test import FakePipeline
+
+    sync_client, langfuse, registry = build_client()
+    cache = RagBuildCache(FakePipeline)
+    sync_client.app.dependency_overrides[get_rag_cache] = lambda: cache
+    async with AsyncClient(
+        transport=ASGITransport(sync_client.app), base_url="http://test"
+    ) as client:
+        for name in ("first", "second"):
+            document = _document(name=name)
+            document["tools"]["rag"] = {
+                "enable_tool": True,
+                "corpus_datasets": [" corpus/bio ", "corpus/bio"],
+            }
+            response = await client.put(f"/presets/{name}", json=document)
+            assert response.status_code == 200
+            assert response.json()["definition"]["tools"]["rag"]["corpus_datasets"] == [
+                "corpus/bio"
+            ]
+        first, second = await registry.get("first"), await registry.get("second")
+        manager = cache.manager(first)
+        await manager.wait()
+        assert cache.manager(second) is manager
+        assert len(manager.pipeline.calls) == 1
+        document["tools"]["rag"]["corpus_datasets"] = ["corpus/chem"]
+        response = await client.put("/presets/second", json=document)
+        assert response.status_code == 200
+        changed = cache.manager(await registry.get("second"))
+        await changed.wait()
+        assert changed is not manager
+        assert cache.pipeline(first).corpus_dataset_names == ["corpus/bio"]
+        assert langfuse.written[-1][2]["tools"]["rag"]["corpus_datasets"] == [
+            "corpus/chem"
+        ]
+    await cache.aclose()

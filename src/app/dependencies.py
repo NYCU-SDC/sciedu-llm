@@ -10,9 +10,8 @@ from openai import AsyncOpenAI
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from app import listings
 from app.presets import PresetRegistry
-from app.rag_builds import RagBuildManager
+from app.rag_cache import RagBuildCache
 from judge import EvalRunner
 from observability import init_langfuse_client
 from rag import RAGPipeline
@@ -55,13 +54,6 @@ class Settings(BaseSettings):
     chat_preset_name: str = "default-chat-plain"
     chat_rag_preset_name: str = "default-chat"
 
-    # Comma-separated Langfuse corpus dataset names to index for RAG-enabled chat.
-    # Read from RAG_CORPUS_DATASETS. Optional: when empty, every dataset under
-    # the corpus folder is discovered from Langfuse by the post-startup background
-    # build instead (see `build_rag_pipeline`). RAG is disabled until that build
-    # succeeds, and remains disabled when neither source yields a dataset.
-    rag_corpus_datasets: str = ""
-
     # How far back `GET /admin/evals/history` looks. Not a preference: Langfuse's
     # experiments endpoint requires a `fromStartTime`, so a history listing is
     # always a window, and this is how wide.
@@ -78,12 +70,6 @@ class Settings(BaseSettings):
     # Note that env variables always take precedence over values in .env.
     # `extra="ignore"` because .env is shared with other modules (langfuse/rag/judge).
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-
-    @property
-    def rag_corpus_dataset_names(self) -> list[str]:
-        return [
-            name.strip() for name in self.rag_corpus_datasets.split(",") if name.strip()
-        ]
 
     @property
     def allowed_model_names(self) -> list[str]:
@@ -198,89 +184,6 @@ async def validate_allowed_models() -> list[str]:
     return allowed
 
 
-async def build_rag_pipeline() -> RAGPipeline | None:
-    """Build the RAG pipeline from the configured or discovered corpus datasets.
-
-    ``RAG_CORPUS_DATASETS`` pins the set when it is configured. When it is not,
-    every dataset under the corpus folder is discovered from Langfuse, so a
-    deployment that has seeded a corpus gets retrieval without a second place to
-    keep the list in sync. Returns ``None`` — RAG disabled — when neither yields
-    a dataset, including when discovery itself fails: an unreachable Langfuse
-    must leave the server up and answering ``enable_rag`` requests with the
-    documented 503, not take down the service.
-
-    Called once by the background task the app lifespan schedules immediately
-    before it starts serving. The caller publishes the completed pipeline on
-    ``app.state``; this function never exposes a partially-built pipeline.
-    """
-    settings = get_settings()
-    names = settings.rag_corpus_dataset_names or await _discover_corpus_datasets(
-        settings
-    )
-    if not names:
-        return None
-    pipeline = RAGPipeline(await get_openai_client(), get_langfuse_client())
-    await pipeline.build(names)
-    return pipeline
-
-
-async def _discover_corpus_datasets(settings: Settings) -> list[str]:
-    """Every Langfuse dataset under the corpus folder, or ``[]`` if none/failed."""
-    try:
-        corpus, _questions = await listings.list_dataset_names(
-            get_langfuse_client(),
-            corpus_folder=settings.corpus_dataset_folder,
-            questions_folder=settings.questions_dataset_folder,
-        )
-    except Exception:
-        logger.warning(
-            "Could not list Langfuse datasets to discover a RAG corpus; RAG stays "
-            "disabled. Set RAG_CORPUS_DATASETS to configure it explicitly.",
-            exc_info=True,
-        )
-        return []
-    names = [name for _label, name in corpus]
-    if names:
-        logger.info(
-            "Discovered %d corpus dataset(s) under '%s/': %s",
-            len(names),
-            settings.corpus_dataset_folder,
-            ", ".join(names),
-        )
-    return names
-
-
-def get_rag_pipeline(request: Request) -> RAGPipeline | None:
-    return getattr(request.app.state, "rag_pipeline", None)
-
-
-rag_pipeline_dependency = Annotated[RAGPipeline | None, Depends(get_rag_pipeline)]
-
-
-def get_rag_build_manager(
-    request: Request, rag_pipeline: rag_pipeline_dependency
-) -> RagBuildManager | None:
-    """Serve the process-wide index-build manager, or ``None`` when RAG is off.
-
-    Reached through ``rag_pipeline_dependency`` rather than ``app.state`` so a
-    test (or the fake stack) that overrides the pipeline gets a manager wrapping
-    *that* pipeline. The lifespan warms one up; the lazy branch covers an app
-    started without it, and re-wraps if the pipeline underneath was replaced.
-    """
-    if rag_pipeline is None:
-        return None
-    manager = getattr(request.app.state, "rag_build_manager", None)
-    if manager is None or manager.pipeline is not rag_pipeline:
-        manager = RagBuildManager(rag_pipeline)
-        request.app.state.rag_build_manager = manager
-    return manager
-
-
-rag_build_manager_dependency = Annotated[
-    RagBuildManager | None, Depends(get_rag_build_manager)
-]
-
-
 def get_preset_registry(
     request: Request, langfuse: langfuse_dependency, settings: settings_dependency
 ) -> PresetRegistry:
@@ -299,6 +202,21 @@ def get_preset_registry(
 
 
 preset_registry_dependency = Annotated[PresetRegistry, Depends(get_preset_registry)]
+
+
+async def get_rag_cache(
+    request: Request, openai: openai_dependency, langfuse: langfuse_dependency
+) -> RagBuildCache:
+    cache = getattr(request.app.state, "rag_cache", None)
+    if cache is None:
+        cache = RagBuildCache(
+            lambda config: RAGPipeline(openai, langfuse, config=config)
+        )
+        request.app.state.rag_cache = cache
+    return cache
+
+
+rag_cache_dependency = Annotated[RagBuildCache, Depends(get_rag_cache)]
 
 
 def get_eval_runner(request: Request) -> EvalRunner:

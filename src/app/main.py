@@ -1,23 +1,22 @@
-import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.dependencies import (
-    build_rag_pipeline,
     get_langfuse_client,
     get_openai_client,
     get_settings,
     validate_allowed_models,
 )
 from app.presets import PresetRegistry, ensure_default_presets
-from app.rag_builds import RagBuildManager
+from app.rag_cache import RagBuildCache
 from app.routers import admin, agents, chat, health, title
 from judge import EvalRunner
+from rag import RAGPipeline
 
 load_dotenv()
 
@@ -44,50 +43,10 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
-async def _build_rag_in_background(app: FastAPI) -> None:
-    """Build and publish the initial RAG pipeline after the app starts serving."""
-    logger = logging.getLogger(__name__)
-    try:
-        pipeline = await build_rag_pipeline()
-    except asyncio.CancelledError:
-        logger.info("Initial RAG index build cancelled by shutdown")
-        raise
-    except Exception:
-        # RAG is optional. An embedding/backend failure must not take down an
-        # otherwise healthy chat service after startup has already completed.
-        logger.exception("Initial RAG index build failed; RAG remains disabled")
-        return
-
-    if pipeline is None:
-        logger.info(
-            "RAG remains disabled — no corpus datasets configured "
-            "(RAG_CORPUS_DATASETS) and none discovered under the corpus folder"
-        )
-        return
-
-    # Publish the manager first so the moment request dependencies can see the
-    # pipeline they can also see the matching manager. There is no interval in
-    # which a half-built pipeline is exposed: RAGPipeline.build installs its
-    # indexes only after every embedding has completed.
-    app.state.rag_build_manager = RagBuildManager(pipeline)
-    app.state.rag_pipeline = pipeline
-    logger.info(
-        "RAG enabled after background index build from corpus datasets: %s",
-        ", ".join(pipeline.corpus_dataset_names),
-    )
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()  # Forces loading of settings
     logger = logging.getLogger(__name__)
-
-    # Requests initially observe RAG as disabled. The corpus is deliberately
-    # built only after startup yields control to Uvicorn, then published as one
-    # fully-built pipeline by `_build_rag_in_background`.
-    app.state.rag_pipeline = None
-    app.state.rag_build_manager = None
-    app.state.rag_startup_task = None
 
     allowed_models = await validate_allowed_models()
     if allowed_models:
@@ -139,21 +98,17 @@ async def lifespan(app: FastAPI):
     # with it — otherwise shutdown would strand in-flight runs mid-experiment.
     app.state.eval_runner = EvalRunner(await get_openai_client(), get_langfuse_client())
 
-    app.state.rag_startup_task = asyncio.create_task(
-        _build_rag_in_background(app), name="rag-initial-build"
+    openai = await get_openai_client()
+    app.state.rag_cache = RagBuildCache(
+        lambda config: RAGPipeline(openai, get_langfuse_client(), config=config)
     )
-    logger.info("Application successfully started; RAG is initially disabled")
-    yield
-
-    app.state.eval_runner.shutdown()
-    rag_startup_task = app.state.rag_startup_task
-    if rag_startup_task is not None:
-        if not rag_startup_task.done():
-            rag_startup_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await rag_startup_task
-    if app.state.rag_build_manager is not None:
-        app.state.rag_build_manager.shutdown()
+    app.state.rag_cache.warm(registry.snapshot().values())
+    logger.info("Application successfully started; preset RAG builds scheduled")
+    try:
+        yield
+    finally:
+        app.state.eval_runner.shutdown()
+        await app.state.rag_cache.aclose()
 
 
 app = FastAPI(lifespan=lifespan)

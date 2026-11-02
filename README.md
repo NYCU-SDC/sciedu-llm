@@ -40,6 +40,44 @@ browsable at `http://localhost:8080/docs`. The admin panel that drives it is a
 separately built frontend living in `ui/`; see [`docs/admin-ui-spec.md`](docs/admin-ui-spec.md)
 for the features it must cover.
 
+### Preset RAG indexes
+
+Choose the corpus in each preset's `tools.rag.corpus_datasets`, for example:
+
+```json
+"rag": {
+  "enable_tool": true,
+  "force": false,
+  "corpus_datasets": ["corpus/biology-10"]
+}
+```
+
+The preset editor provides a corpus picker. RAG settings remain global on the
+retrieval settings page, which also lets you select a preset to inspect,
+rebuild, or cancel its index build. The API uses
+`GET /admin/rag/config?preset=<name>` and the same query parameter for
+`POST /admin/rag/rebuild` and `POST /admin/rag/rebuild/cancel`. Omitting it
+selects `AGENTS_DEFAULT_PRESET`. `PATCH /admin/rag/config` and
+`POST /admin/rag/reset` update global settings; they never change preset corpora.
+
+Indexes are cached in memory for the life of the server process. The cache key
+contains the sorted, deduplicated corpus names, embedding model, embedding
+batch size, chunk size, and overlap. Matching presets share completed indexes
+and in-flight builds. Retrieval settings apply globally without re-embedding;
+changing build settings selects a different cache entry. Reverting settings
+can reuse an earlier entry. Startup, preset saves, and preset refreshes schedule
+missing builds in the background. Requests also schedule missing entries and
+return 503 until their preset's index is ready. Failed or cancelled builds need
+an explicit rebuild; polling does not retry them. A forced rebuild refreshes a
+shared entry after dataset contents change in Langfuse. Cancelling that build
+affects every preset sharing it; other entries keep running.
+
+**Migration:** `RAG_CORPUS_DATASETS` and automatic corpus-folder discovery no
+longer select retrieval data. Existing preset documents still load, with an
+empty corpus by default. Select and save the intended datasets for each
+RAG-enabled preset, including `default-chat` and `default-agents`, before using
+retrieval. An empty corpus never falls back to another preset's index.
+
 ### Seeding Langfuse
 
 The service reads its corpus, questions, and presets out of Langfuse. The

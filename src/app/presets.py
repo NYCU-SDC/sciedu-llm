@@ -119,6 +119,15 @@ class RagToolConfig(BaseModel):
 
     enable_tool: bool = False
     force: bool = False
+    # Empty means no corpus, never a fallback to a server-wide dataset list.
+    corpus_datasets: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _normalise_corpus(self) -> "RagToolConfig":
+        if any(not name.strip() for name in self.corpus_datasets):
+            raise ValueError("corpus_datasets must contain non-empty dataset names")
+        self.corpus_datasets = sorted({name.strip() for name in self.corpus_datasets})
+        return self
 
     @model_validator(mode="after")
     def _force_requires_enablement(self) -> "RagToolConfig":
