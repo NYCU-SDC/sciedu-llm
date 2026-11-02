@@ -524,3 +524,19 @@ async def test_saving_presets_persists_their_corpus_and_shares_only_matching_bui
             "corpus/chem"
         ]
     await cache.aclose()
+
+
+def test_inherited_corpus_does_not_make_a_code_default_look_dataset_defined(
+    build_client,
+):
+    settings = _settings()
+    settings.rag_corpus_datasets = "corpus/bio"
+    registry = PresetRegistry(langfuse=_FakeLangfuse(), settings=settings)
+    client, _, _ = build_client(registry=registry)
+    client.post("/presets/refresh")
+    response = client.get("/presets/default-agents")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["builtin"] is True
+    assert body["shadowed_builtin"] is False
+    assert body["definition"]["tools"]["rag"]["corpus_datasets"] == ["corpus/bio"]

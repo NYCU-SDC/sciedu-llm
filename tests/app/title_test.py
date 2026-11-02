@@ -153,3 +153,64 @@ def test_chat_title_only_system_messages_rejected(client):
         json={"messages": [{"role": "system", "content": "you are…"}]},
     )
     assert response.status_code == 422
+
+
+def test_chat_title_converts_a_stored_text_prompt_to_chat_messages(
+    client, fake_langfuse
+):
+    from langfuse.model import TextPromptClient
+
+    # The SDK returns this stored type even with get_prompt(type="chat").
+    fake_langfuse.prompt = TextPromptClient(
+        SimpleNamespace(
+            name="app/chat-title-generator",
+            version=1,
+            config={},
+            labels=[],
+            tags=[],
+            commit_message=None,
+            prompt="Generate a title for:\n{{conversation}}",
+        )
+    )
+    fake_openai = _make_openai("Photosynthesis")
+    app.dependency_overrides[get_openai_client] = lambda: fake_openai
+    response = client.post(
+        "/chat/title",
+        json={
+            "messages": [{"role": "user", "content": "Explain photosynthesis"}],
+        },
+    )
+    assert response.status_code == 200
+    sent = fake_openai.chat.completions.create.call_args.kwargs["messages"]
+    assert sent == [
+        {
+            "role": "user",
+            "content": "Generate a title for:\nUser: Explain photosynthesis",
+        }
+    ]
+    assert fake_langfuse.requested_types == ["chat"]
+
+
+@pytest.mark.parametrize(
+    "compiled",
+    [
+        None,
+        {},
+        "",
+        "  ",
+        [],
+        ["not a message"],
+        [{"role": "unknown", "content": "text"}],
+    ],
+)
+def test_chat_title_rejects_bad_compiled_prompts_before_the_model_call(
+    client, fake_langfuse, compiled
+):
+    fake_langfuse.prompt = SimpleNamespace(compile=lambda **_kwargs: compiled)
+    fake_openai = _make_openai("Unused")
+    app.dependency_overrides[get_openai_client] = lambda: fake_openai
+    response = client.post(
+        "/chat/title", json={"messages": [{"role": "user", "content": "Hi"}]}
+    )
+    assert response.status_code == 502
+    fake_openai.chat.completions.create.assert_not_awaited()

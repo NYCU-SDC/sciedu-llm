@@ -1,9 +1,9 @@
 import logging
 import re
-from typing import cast
 
 from fastapi import APIRouter, HTTPException
 from openai.types.chat import ChatCompletionMessageParam
+from pydantic import TypeAdapter
 
 from app.dependencies import (
     langfuse_dependency,
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 MAX_CONVERSATION_CHARS = 8000
 MAX_TITLE_CHARS = 200
 _QUOTE_CHARS = "\"'“”‘’「」『』《》"
+_TITLE_MESSAGES = TypeAdapter(list[ChatCompletionMessageParam])
 
 
 def _format_conversation(messages: list[ChatCompletionMessageParam]) -> str:
@@ -82,10 +83,16 @@ async def chat_title(
 
     try:
         prompt = langfuse.get_prompt(prompt_name, type="chat")
-        compiled_messages = cast(
-            list[ChatCompletionMessageParam],
-            prompt.compile(conversation=conversation),
-        )
+        compiled = prompt.compile(conversation=conversation)
+        # Langfuse returns the stored prompt type, even when type="chat" was
+        # requested. A cast cannot convert a text prompt into chat messages.
+        if isinstance(compiled, str):
+            if not compiled.strip():
+                raise ValueError("The title prompt compiled to empty text")
+            compiled = [{"role": "user", "content": compiled}]
+        compiled_messages = _TITLE_MESSAGES.validate_python(compiled)
+        if not compiled_messages:
+            raise ValueError("The title prompt compiled to an empty message list")
     except Exception as e:
         logger.exception("Failed to fetch LangFuse prompt %r", prompt_name)
         raise HTTPException(

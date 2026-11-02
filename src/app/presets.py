@@ -39,7 +39,14 @@ from typing import Any, Literal
 
 from langfuse.api import DatasetStatus
 from langfuse.api.commons.errors.not_found_error import NotFoundError
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 
 from app.agents.engine import MAX_STEPS_CAP
 from app.agents.tools import (
@@ -119,15 +126,16 @@ class RagToolConfig(BaseModel):
 
     enable_tool: bool = False
     force: bool = False
-    # Empty means no corpus, never a fallback to a server-wide dataset list.
+    # Explicit [] means no corpus. Omitted fields on legacy documents are
+    # resolved by the registry from the pre-migration server configuration.
     corpus_datasets: list[str] = Field(default_factory=list)
 
-    @model_validator(mode="after")
-    def _normalise_corpus(self) -> "RagToolConfig":
-        if any(not name.strip() for name in self.corpus_datasets):
+    @field_validator("corpus_datasets")
+    @classmethod
+    def _normalise_corpus(cls, names: list[str]) -> list[str]:
+        if any(not name.strip() for name in names):
             raise ValueError("corpus_datasets must contain non-empty dataset names")
-        self.corpus_datasets = sorted({name.strip() for name in self.corpus_datasets})
-        return self
+        return sorted({name.strip() for name in names})
 
     @model_validator(mode="after")
     def _force_requires_enablement(self) -> "RagToolConfig":
@@ -459,6 +467,8 @@ class PresetRegistry:
         self._langfuse = langfuse
         self._settings = settings
         self._presets: dict[str, Preset] = dict(DEFAULT_PRESETS)
+        self._dataset_names: set[str] = set()
+        self._legacy_corpus: list[str] | None = None
         self._load_errors: dict[str, str] = {}
         self._fetched_at: float | None = None
         # A monotonic deadline. 0.0 means "never loaded", so the first `get()`
@@ -482,6 +492,58 @@ class PresetRegistry:
     def snapshot(self) -> dict[str, Preset]:
         """A copy of the serving map, safe to iterate while a refresh happens."""
         return dict(self._presets)
+
+    def is_dataset_preset(self, name: str) -> bool:
+        """Provenance survives cloning a code default for corpus migration."""
+        return name in self._dataset_names
+
+    async def _resolve_legacy_corpora(
+        self, presets: dict[str, Preset]
+    ) -> dict[str, Preset]:
+        legacy = [
+            p
+            for p in presets.values()
+            if p.tools.rag.enable_tool
+            and "corpus_datasets" not in p.tools.rag.model_fields_set
+        ]
+        if not legacy:
+            return presets
+
+        configured = getattr(self._settings, "rag_corpus_datasets", "")
+        names = sorted({name.strip() for name in configured.split(",") if name.strip()})
+        if not names:
+            if self._legacy_corpus is None:
+                from app.listings import list_dataset_names
+
+                try:
+                    corpus, _ = await list_dataset_names(
+                        self._langfuse,
+                        corpus_folder=getattr(
+                            self._settings, "corpus_dataset_folder", "corpus"
+                        ),
+                        questions_folder=getattr(
+                            self._settings, "questions_dataset_folder", "questions"
+                        ),
+                    )
+                    self._legacy_corpus = [name for _label, name in corpus] or None
+                except Exception:
+                    logger.warning(
+                        "Could not discover the legacy RAG corpus", exc_info=True
+                    )
+            names = self._legacy_corpus or []
+        if not names:
+            return presets
+
+        migrated = dict(presets)
+        for preset in legacy:
+            rag = preset.tools.rag.model_copy(update={"corpus_datasets": list(names)})
+            tools = preset.tools.model_copy(update={"rag": rag})
+            migrated[preset.name] = preset.model_copy(update={"tools": tools})
+        logger.info(
+            "Inherited legacy RAG corpus for presets %s; save their corpus selections to finish migration",
+            ", ".join(p.name for p in legacy),
+        )
+        return migrated
 
     async def refresh(self) -> PresetLoadReport:
         """Reload from the dataset now, ignoring the TTL."""
@@ -538,6 +600,7 @@ class PresetRegistry:
                 if is_active_preset_item(item)
             ]
         except Exception as e:
+            self._presets = await self._resolve_legacy_corpora(self._presets)
             logger.exception(
                 "could not load the preset dataset '%s'; continuing to serve the "
                 "%d preset(s) already loaded",
@@ -554,7 +617,10 @@ class PresetRegistry:
 
         loaded, errors = _parse_items(items)
         # Dataset entries shadow the code defaults of the same name.
-        self._presets = dict(DEFAULT_PRESETS) | loaded
+        self._presets = await self._resolve_legacy_corpora(
+            dict(DEFAULT_PRESETS) | loaded
+        )
+        self._dataset_names = set(loaded)
         self._load_errors = errors
         self._fetched_at = time.time()
         self._expires_at = time.monotonic() + self._ttl
@@ -609,6 +675,10 @@ async def ensure_default_presets(langfuse: Any, settings: Any) -> list[str]:
         if name in present:
             continue
         document = preset.model_dump()
+        # Keep the missing-field signal until the registry can resolve legacy
+        # settings. Seeding [] here would permanently disable an old default.
+        if "corpus_datasets" not in preset.tools.rag.model_fields_set:
+            document["tools"]["rag"].pop("corpus_datasets", None)
         await asyncio.to_thread(
             lambda name=name, document=document: langfuse.create_dataset_item(
                 dataset_name=dataset_name, id=name, input=document

@@ -65,26 +65,22 @@ def _report(report: PresetLoadReport) -> PresetLoadReportResponse:
     )
 
 
-def _flags(name: str, served: Preset) -> tuple[bool, bool]:
+def _flags(name: str, registry: PresetRegistry) -> tuple[bool, bool]:
     """``(builtin, shadowed_builtin)`` for one entry of the serving map.
 
     "Builtin" on the wire means *code-defined default* (``DEFAULT_PRESETS``).
 
-    Identity, not equality: the registry rebuilds its map as
-    ``dict(DEFAULT_PRESETS) | loaded``, so the code default object survives
-    verbatim unless a dataset item replaced it. A dataset item whose content
-    happens to match the default is still dataset-defined — and still deletable
-    — so it must read as shadowing. Startup seeding writes exactly such an item,
-    so a freshly seeded deployment reports its defaults as shadowed.
+    Track the dataset source explicitly: legacy corpus migration can clone a
+    code default without making it a dataset override.
     """
     default = DEFAULT_PRESETS.get(name)
     if default is None:
         return False, False
-    return True, served is not default
+    return True, registry.is_dataset_preset(name)
 
 
-def _detail(name: str, served: Preset) -> PresetDetail:
-    builtin, shadowed = _flags(name, served)
+def _detail(name: str, served: Preset, registry: PresetRegistry) -> PresetDetail:
+    builtin, shadowed = _flags(name, registry)
     return PresetDetail.build(served, builtin=builtin, shadowed_builtin=shadowed)
 
 
@@ -140,7 +136,7 @@ async def _find_item(langfuse: Langfuse, dataset_name: str, preset_name: str) ->
 async def list_presets(registry: preset_registry_dependency):
     summaries = []
     for name, served in sorted(registry.snapshot().items()):
-        builtin, shadowed = _flags(name, served)
+        builtin, shadowed = _flags(name, registry)
         summaries.append(
             PresetSummary(
                 name=name,
@@ -159,7 +155,7 @@ async def list_presets(registry: preset_registry_dependency):
     responses=ADMIN_PRESET_RESPONSES,
 )
 async def get_preset(name: str, registry: preset_registry_dependency):
-    return _detail(name, _require(registry, name))
+    return _detail(name, _require(registry, name), registry)
 
 
 @router.put(
@@ -215,7 +211,7 @@ async def upsert_preset(
     await registry.refresh()
     served = _require(registry, name)
     cache.ensure(served)
-    return _detail(name, served)
+    return _detail(name, served, registry)
 
 
 async def _ensure_dataset(langfuse: Langfuse, dataset_name: str) -> None:
