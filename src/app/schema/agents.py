@@ -4,6 +4,9 @@ from openai.types.chat import ChatCompletionMessageParam
 from pydantic import BaseModel, Field
 
 
+from app.schema.learning import Action, LearningContext, TeachingState
+
+
 class AgentsRequest(BaseModel):
     """What a client may decide about an agentic run: the conversation, and which
     server-owned *preset* to run it with.
@@ -16,6 +19,9 @@ class AgentsRequest(BaseModel):
     than a 422 on a field the server no longer honours.
     """
 
+    learning_context: LearningContext | None = None
+    teaching_state: TeachingState | None = None
+    teaching_action: Action | None = None
     messages: list[ChatCompletionMessageParam]
     stream: bool
     preset: Optional[str] = Field(
@@ -72,6 +78,7 @@ class AgentsResponse(BaseModel):
     status: Literal["completed", "failed"]
     finishReason: Optional[str] = None
     cast: Optional[list[CharacterInfoResponse]] = None
+    teachingState: dict[str, str] | None = None
     parts: list[dict[str, Any]]
 
 

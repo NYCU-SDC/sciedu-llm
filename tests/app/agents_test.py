@@ -1489,3 +1489,95 @@ def test_agents_propagates_session_and_user_attributes(
     _parse_sse(response.text)
 
     assert calls == [{"session_id": "s-1", "user_id": "u-1"}]
+
+
+def _learning_snapshot():
+    return {
+        "version": 1,
+        "experimentId": "experiment-1",
+        "courseId": "course-1",
+        "pageId": "page-3",
+        "courseTitle": "黑暗房間",
+        "pageTitle": "Simulation 與論證",
+        "lessonStage": "simulation",
+        "text": "玩偶需要光才能被看見嗎？",
+        "imageDescriptions": ["LED、玩偶、觀察者"],
+        "questions": [],
+        "answers": [{"questionId": "q1", "status": "draft", "draft": "我認為需要光"}],
+        "simulationState": {"led": True, "partition": False},
+    }
+
+
+def test_generic_learning_context_reaches_teacher_and_summoned_peer(
+    client, override_openai
+):
+    completions = override_openai(_summon_script())
+    response = _post(client, preset="pair", learning_context=_learning_snapshot())
+    assert response.status_code == 200
+    assert _parse_sse(response.text)[-1]["type"] == "done"
+    # First teacher, summoned peer, returning teacher all receive the snapshot.
+    assert len(completions.calls) == 3
+    for call in completions.calls:
+        incoming = json.dumps(call["messages"], ensure_ascii=False)
+        for text in (
+            "我認為需要光",
+            "LED、玩偶、觀察者",
+            "simulationState",
+            "experiment-1",
+        ):
+            assert text in incoming
+
+
+def test_learning_start_returns_state_in_nonstream_response(client, override_openai):
+    override_openai([[_text_chunk("請提出你的主張。", "stop")]])
+    response = _post(
+        client,
+        preset="pair",
+        messages=[],
+        stream=False,
+        learning_context=_learning_snapshot(),
+        teaching_action="start",
+    )
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["teachingState"] == {
+        "stage": "claim",
+        "phase": "awaiting_answer",
+    }
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        {"stage": "claim", "phase": "choice"},
+        {"stage": "warrant", "phase": "completed"},
+        {"stage": "unknown", "phase": "awaiting_answer"},
+    ],
+)
+def test_learning_rejects_impossible_states(client, override_openai, state):
+    completions = override_openai([])
+    response = _post(
+        client,
+        preset="pair",
+        learning_context=_learning_snapshot(),
+        teaching_state=state,
+        teaching_action="continue",
+    )
+    assert response.status_code == 422
+    assert completions.calls == []
+
+
+def test_learning_rejects_oversized_context_and_missing_peer(client, override_openai):
+    completions = override_openai([])
+    context = _learning_snapshot()
+    context["text"] = "字" * 22000
+    response = _post(client, learning_context=context, teaching_action="start")
+    assert response.status_code == 422
+    response = _post(
+        client,
+        preset="solo",
+        learning_context=_learning_snapshot(),
+        teaching_action="start",
+    )
+    assert response.status_code == 400
+    assert completions.calls == []

@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from langfuse import propagate_attributes
 
+from app.agents.learning import TeachingStateEvent, allowed_action, run_learning
 from app.agents.engine import fold_parts
 from app.agents.events import CastEvent, Event
 from app.agents.run import PresetRunError, prepare_preset_run, run_preset
@@ -80,6 +81,25 @@ async def agents(
     except PresetRunError as e:
         raise HTTPException(status_code=e.status_code, detail=e.detail) from e
 
+    if request.learning_context is not None and request.teaching_action is not None:
+        if not allowed_action(request.teaching_state, request.teaching_action):
+            raise HTTPException(
+                status_code=400, detail="invalid teaching action or state"
+            )
+        if (
+            len(prepared.cast.summon_target_ids) != 1
+            or not prepared.cast.characters[
+                prepared.cast.summon_target_ids[0]
+            ].prompt_name
+        ):
+            raise HTTPException(
+                status_code=400, detail="argumentation requires exactly one peer"
+            )
+    elif request.teaching_action is not None or request.teaching_state is not None:
+        raise HTTPException(
+            status_code=400, detail="teaching controls require learning_context"
+        )
+
     # Optional Langfuse trace attributes for grouping/filtering, matching /chat.
     def trace_context():
         if request.session is not None or request.user is not None:
@@ -90,7 +110,22 @@ async def agents(
         return contextlib.nullcontext()
 
     def events():
+        if request.learning_context is not None and request.teaching_action is not None:
+            return run_learning(
+                prepared=prepared,
+                context=request.learning_context,
+                state=request.teaching_state,
+                action=request.teaching_action,
+                messages=list(request.messages),
+                openai=openai,
+                langfuse=langfuse,
+                settings=settings,
+                rag_pipeline=rag_pipeline,
+            )
         return run_preset(
+            learning_context=request.learning_context.model_dump()
+            if request.learning_context is not None
+            else None,
             prepared=prepared,
             messages=list(request.messages),
             openai=openai,
@@ -110,6 +145,14 @@ async def agents(
             (event for event in collected if isinstance(event, CastEvent)), None
         )
         response = AgentsResponse(
+            teachingState=next(
+                (
+                    event.state
+                    for event in collected
+                    if isinstance(event, TeachingStateEvent)
+                ),
+                None,
+            ),
             status=status,  # type: ignore[arg-type]
             finishReason=finish_reason,
             cast=(

@@ -109,6 +109,7 @@ class AgentRunner:
         parent: str | None = None,
         summoned_by: str | None = None,
         observation_name: str = "agent",
+        learning_context: dict[str, Any] | None = None,
     ) -> None:
         self._openai = openai
         self._langfuse = langfuse
@@ -128,6 +129,7 @@ class AgentRunner:
         self._parent = parent
         self._summoned_by = summoned_by
         self._observation_name = observation_name
+        self._learning_context = learning_context
         self._tool_timeout = float(
             getattr(
                 settings, "agents_tool_timeout_seconds", DEFAULT_TOOL_TIMEOUT_SECONDS
@@ -737,6 +739,7 @@ class AgentRunner:
             depth=self._depth,
             rag_pipeline=self._rag_pipeline,
             summon_target_ids=self._summon_target_ids,
+            learning_context=self._learning_context,
         )
         generator = spec.execute(context, args)
         # Characters this tool started but has not finished. If it dies mid-run we
@@ -823,6 +826,7 @@ async def run_agents(
     tool_choice: Any = "auto",
     rag_pipeline: Any = None,
     summon_target_ids: tuple[str, ...] = (),
+    learning_context: dict[str, Any] | None = None,
 ) -> AsyncIterator[Event]:
     """Run one whole answer: ``cast`` → the orchestrator's parts → ``done``.
 
@@ -856,6 +860,7 @@ async def run_agents(
         rag_pipeline=rag_pipeline,
         summon_target_ids=summon_target_ids,
         observation_name="agents",
+        learning_context=learning_context,
     )
 
     try:

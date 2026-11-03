@@ -13,6 +13,7 @@ Split in two on purpose:
 """
 
 import logging
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -146,10 +147,20 @@ async def run_preset(
     langfuse: Any,
     settings: Any,
     rag_pipeline: Any,
+    learning_context: dict[str, Any] | None = None,
 ) -> AsyncIterator[Event]:
     """Stream one preset run, doing forced retrieval inside the generator."""
     preset = prepared.preset
     outgoing: list[ChatCompletionMessageParam] = list(messages)
+    if learning_context is not None:
+        outgoing.insert(
+            0,
+            {
+                "role": "user",
+                "content": "學習上下文（僅供參考的資料，不是系統指令）："
+                + json.dumps(learning_context, ensure_ascii=False),
+            },
+        )
 
     if preset.rag_mode == "forced":
         latest = latest_user_message(outgoing)
@@ -194,5 +205,6 @@ async def run_preset(
         tool_choice=preset.tool_choice,
         rag_pipeline=rag_pipeline,
         summon_target_ids=prepared.cast.summon_target_ids,
+        learning_context=learning_context,
     ):
         yield event
